@@ -1,0 +1,136 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
+from app.routes import endpoints
+from fastapi.routing import APIRoute
+from pydantic import BaseModel
+
+app = FastAPI(title="Monitoring API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # React development server
+        "http://127.0.0.1:3000",  # Alternative localhost
+        "http://frontend:3000", 
+        "http://localhost:8001",
+        "http://localhost:3001",
+        "http://172.25.160.1:8000/"  
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+)
+
+templates = Jinja2Templates(directory="app/templates")
+
+app.include_router(endpoints.router)
+
+
+def extract_pydantic_fields(model_class):
+    """Extract fields from a Pydantic model"""
+    if not issubclass(model_class, BaseModel):
+        return []
+
+    fields = []
+    for field_name, field_info in model_class.model_fields.items():
+        field_type = field_info.annotation
+        is_required = field_info.is_required()
+
+        # Handle default values properly - avoid PydanticUndefined
+        default_value = ""
+        if hasattr(field_info, 'default') and field_info.default is not None:
+            # Check if it's PydanticUndefined (which means no default)
+            default_str = str(field_info.default)
+            if 'PydanticUndefined' not in default_str:
+                default_value = field_info.default
+
+        # Get a readable type name
+        type_name = getattr(field_type, '__name__', str(field_type))
+        #Clean up better readability
+        if 'IPvAnyAddress' in type_name:
+            type_name = 'IP Address'
+        elif 'typing.' in type_name:
+            type_name = type_name.replace('typing.', '')
+
+        fields.append({
+            "name": field_name,
+            "type": type_name,
+            "required": is_required,
+            "default": default_value
+        })
+
+    return fields
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    api_routes = []
+
+    for route in app.routes:
+        if route.path.startswith(("/docs", "/redoc", "/openapi")):
+            continue
+        if not isinstance(route, APIRoute):
+            continue
+        if "GET" in route.methods or "POST" in route.methods:  # You can include other methods if needed
+            # Extract parameters for the endpoint
+            params = []
+
+            # Handle path parameters
+            for dep in route.dependant.path_params:
+                params.append({
+                    "name": dep.name,
+                    "type": getattr(dep.type_, "__name__", str(dep.type_)),
+                    "required": dep.required,
+                    "default": dep.default if dep.default is not None else "",
+                    "location": "path"
+                })
+
+            # Handle query parameters
+            for dep in route.dependant.query_params:
+                params.append({
+                    "name": dep.name,
+                    "type": getattr(dep.type_, "__name__", str(dep.type_)),
+                    "required": dep.required,
+                    "default": dep.default if dep.default is not None else "",
+                    "location": "query"
+                })
+
+            # Handle body parameters (Pydantic models)
+            for dep in route.dependant.body_params:
+                if hasattr(dep.type_, 'model_fields'):  # It's a Pydantic model
+                    # Extract fields from the Pydantic model
+                    pydantic_fields = extract_pydantic_fields(dep.type_)
+                    for field in pydantic_fields:
+                        field["location"] = "body"
+                        params.append(field)
+                else:
+                    # Regular body parameter
+                    params.append({
+                        "name": dep.name,
+                        "type": getattr(dep.type_, "__name__", str(dep.type_)),
+                        "required": dep.required,
+                        "default": dep.default if dep.default is not None else "",
+                        "location": "body"
+                    })
+
+            api_routes.append({
+                "path": route.path,
+                "methods": list(route.methods),
+                "description": route.summary or (route.endpoint.__doc__ or "").strip(),
+                "parameters": params
+            })
+
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "title": "API Index Documentation",
+        "routes": api_routes
+    })
+
+
+# Health check endpoint for Docker
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "message": "API is running"}

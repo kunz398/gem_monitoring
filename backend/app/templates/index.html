@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }}</title>
+    <style>
+        table {
+            width: 90%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .param {
+            margin-bottom: 6px;
+        }
+        .param-name {
+            font-weight: bold;
+        }
+        .param-required {
+            color: red;
+            font-weight: bold;
+        }
+        .param-default {
+            font-style: italic;
+            color: #555;
+        }
+        .param-location {
+            font-size: 0.8em;
+            color: #666;
+            background-color: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Monitoring API Index</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>API Call</th>
+                <th>Methods</th>
+                <th>Description</th>
+                <th>Parameters</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for route in routes %}
+            <tr>
+                <td><a href="{{ route.path }}">{{ route.path }}</a></td>
+                <td>{{ route.methods | join(', ') }}</td>
+                <td>{{ route.description }}</td>
+                <td>
+                    {% if route.parameters %}
+                        {% for p in route.parameters %}
+                            <div class="param">
+                                <span class="param-name">{{ p.name }}</span> ({{ p.type }})
+                                {% if p.location %}
+                                    <span class="param-location">{{ p.location }}</span>
+                                {% endif %}
+                                {% if p.required %}
+                                    <span class="param-required">*</span>
+                                {% endif %}
+                                {% if p.default and p.default != "" %}
+                                    <span class="param-default">= {{ p.default }}</span>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <em>No parameters</em>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p><strong>Legend:</strong> <span class="param-required">*</span> = Required parameter</p>
+</body>
+</html>
