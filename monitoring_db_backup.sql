@@ -283,3 +283,5 @@ ALTER TABLE ONLY public.monitoring_logs
 -- PostgreSQL database dump complete
 --
 
+INSERT INTO public.monitored_services ("name",ip_address,port,protocol,check_interval_sec,interval_type,interval_value,interval_unit,cron_expression,cron_job_name,last_status,success_count,failure_count,created_at,updated_at,"comment",is_active) VALUES
+	 ('google dns','8.8.8.8',80,'ping',60,'hours',2,'hours',NULL,NULL,'up',2,0,'2025-06-23 21:30:05.021581','2025-06-23 21:31:13.542439','this is just a test',true);
