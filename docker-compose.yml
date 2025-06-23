@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  # Backend API service with integrated cron
+  devapi:
+    cap_add:
+      - NET_RAW
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - app-network
+
+  # React frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development  # Use development stage
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Prevent node_modules from being overwritten
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true  # For hot reload in Docker
+      - WDS_SOCKET_HOST=localhost  # Fix for hot reload
+      - WDS_SOCKET_PORT=3000
+    depends_on:
+      - devapi
+    networks:
+      - app-network
+
+  # Database service
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: "${DB_NAME}"
+      POSTGRES_USER: "${DB_USER}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+volumes:
+  pgdata:
+
+networks:
+  app-network:
+    driver: bridge

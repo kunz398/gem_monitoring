@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  # Backend API service
+  devapi:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.prod
+    depends_on:
+      - db
+    command: >
+      gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+    networks:
+      - app-network
+
+  # React frontend service (Production)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production  # Use production stage
+    ports:
+      - "80:80"
+    depends_on:
+      - devapi
+    networks:
+      - app-network
+
+  # Database service
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: "${DB_NAME}"
+      POSTGRES_USER: "${DB_USER}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+volumes:
+  pgdata:
+
+networks:
+  app-network:
+    driver: bridge
