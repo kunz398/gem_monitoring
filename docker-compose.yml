@@ -9,7 +9,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - ./backend:/app
     working_dir: /app
@@ -31,11 +31,14 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules  # Prevent node_modules from being overwritten
+    env_file:
+      - .env
     environment:
-      - REACT_APP_API_URL=http://localhost:8000
-      - CHOKIDAR_USEPOLLING=true  # For hot reload in Docker
-      - WDS_SOCKET_HOST=localhost  # Fix for hot reload
+      - PORT=3000
+      - HOST=0.0.0.0
+      - WDS_SOCKET_HOST=localhost
       - WDS_SOCKET_PORT=3000
+      - CHOKIDAR_USEPOLLING=true  # For hot reload in Docker
     depends_on:
       - devapi
     networks:

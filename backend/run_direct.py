@@ -38,14 +38,14 @@ def run_direct():
     
     # Run the application
     print("Starting the application...")
-    print("Server will be available at: http://localhost:8000")
+    print("Server will be available at: http://localhost:8001")
     print("Press Ctrl+C to stop the server")
     
     try:
         if use_venv:
-            subprocess.run(["venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "localhost", "--port", "8000", "--reload"])
+            subprocess.run(["venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "localhost", "--port", "8001", "--reload"])
         else:
-            subprocess.run([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "localhost", "--port", "8000", "--reload"])
+            subprocess.run([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "localhost", "--port", "8001", "--reload"])
     except KeyboardInterrupt:
         print("\nServer stopped.")
 

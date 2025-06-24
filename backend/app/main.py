@@ -17,7 +17,8 @@ app.add_middleware(
         "http://frontend:3000", 
         "http://localhost:8001",
         "http://localhost:3001",
-        "http://172.25.160.1:8000/"  
+        "http://172.25.160.1:8001/",
+        "https://opmthredds.gem.spc.int/"  
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -26,7 +27,7 @@ app.add_middleware(
 
 templates = Jinja2Templates(directory="app/templates")
 
-app.include_router(endpoints.router)
+app.include_router(endpoints.router, prefix="/api")
 
 
 def extract_pydantic_fields(model_class):
@@ -70,7 +71,12 @@ async def index(request: Request):
     api_routes = []
 
     for route in app.routes:
-        if route.path.startswith(("/docs", "/redoc", "/openapi")):
+        # Safely get the path, skip if not available
+        route_path = getattr(route, 'path', None)
+        if not route_path:
+            continue
+            
+        if route_path.startswith(("/docs", "/redoc", "/openapi")):
             continue
         if not isinstance(route, APIRoute):
             continue
@@ -117,7 +123,7 @@ async def index(request: Request):
                     })
 
             api_routes.append({
-                "path": route.path,
+                "path": route_path,
                 "methods": list(route.methods),
                 "description": route.summary or (route.endpoint.__doc__ or "").strip(),
                 "parameters": params
