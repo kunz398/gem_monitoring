@@ -10,17 +10,14 @@ import { Link } from 'react-router-dom';
 
 function App() {
   return (
-    <BrowserRouter>
-      {/* <nav>
-        <Link to="/">Dashboard</Link> | <Link to="/admin">Admin</Link>
-      </nav> */}
-      <Routes>
-        <Route path="/" element={<Navigate replace to="/monitoring/home" />} />
-        <Route path="/monitoring/home" element={<Dashboard />} />
-        <Route path="/monitoring/admin" element={<Admin />} />
-        <Route path="/monitoring/service/:id" element={<ServiceDetail />} />
-      </Routes>
-    </BrowserRouter>
+<BrowserRouter basename="/monitoring">
+  <Routes>
+    <Route path="/" element={<Navigate replace to="/home" />} />
+    <Route path="/home" element={<Dashboard />} />
+    <Route path="/admin" element={<Admin />} />
+    <Route path="/service/:id" element={<ServiceDetail />} />
+  </Routes>
+</BrowserRouter>
   );
 }
 
