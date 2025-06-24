@@ -1,8 +1,8 @@
 module.exports = {
   apps: [{
     name: 'react-app',
-    script: 'node_modules/.bin/react-scripts',
-    args: 'start',
+    script: 'node',
+    args: 'node_modules/react-scripts/scripts/start.js',
     env: {
       NODE_ENV: 'development',
       PORT: 3000,
@@ -17,4 +17,4 @@ module.exports = {
     log_file: './logs/combined.log',
     time: true
   }]
-}; 
+};

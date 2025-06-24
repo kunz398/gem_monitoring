@@ -29,7 +29,7 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/app
-      - /app/node_modules  # Prevent node_modules from being overwritten
+      - /app/node_modules
     env_file:
       - .env
     environment:
@@ -38,7 +38,7 @@ services:
       - HOST=0.0.0.0
       - WDS_SOCKET_HOST=localhost
       - WDS_SOCKET_PORT=3000
-      - CHOKIDAR_USEPOLLING=true  # For hot reload in Docker
+      - CHOKIDAR_USEPOLLING=true
     depends_on:
       - devapi
     networks:
