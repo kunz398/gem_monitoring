@@ -34,7 +34,7 @@ const startTime = new Date();
 startTime.setDate(now.getDate() - 2);
 startTime.setHours(0, 0, 0, 0);
 
-const response = await fetch('http://localhost:8000/monitoring_logs/', {
+const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8001/api'}/monitoring_logs`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
