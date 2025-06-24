@@ -18,13 +18,8 @@ COPY . .
 # Create logs directory for PM2
 RUN mkdir -p logs
 
-# Fix permissions for react-scripts and all binaries
-RUN chmod +x node_modules/.bin/* && \
-    chmod +x node_modules/.bin/react-scripts && \
-    ls -la node_modules/.bin/react-scripts
-
-# Build the application
-RUN npm run build
+# Fix permissions for react-scripts
+RUN chmod +x node_modules/.bin/react-scripts
 
 # Expose port
 EXPOSE 3000
