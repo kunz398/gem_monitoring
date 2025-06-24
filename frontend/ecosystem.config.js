@@ -1,10 +1,10 @@
 module.exports = {
   apps: [{
     name: 'react-app',
-    script: 'npm',
+    script: 'node_modules/.bin/react-scripts',
     args: 'start',
     env: {
-      NODE_ENV: 'production',
+      NODE_ENV: 'development',
       PORT: 3000,
       HOST: '0.0.0.0'
     },
