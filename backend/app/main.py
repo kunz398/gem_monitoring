@@ -7,7 +7,12 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 from app.db import close_connection_pool
 
-app = FastAPI(title="Monitoring API")
+app = FastAPI(
+    title="Monitoring API",
+    docs_url="/service/docs",
+    redoc_url="/service/redoc",
+    openapi_url="/service/openapi.json"
+)
 
 # Add CORS middleware
 app.add_middleware(

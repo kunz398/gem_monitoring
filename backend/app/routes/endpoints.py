@@ -88,6 +88,7 @@ class MonitoringLogCreate(BaseModel):
 class MonitoringLogOut(BaseModel):
     id: int
     service_id: int
+    name: Optional[str] = None  # Add service name field
     checked_at: datetime
     status: str
     message: str
@@ -427,28 +428,28 @@ def api_monitor_all_services_bg(background_tasks: BackgroundTasks):
 @router.post("/monitoring_logs", response_model=List[MonitoringLogOut], dependencies=[Depends(verify_api_key)])
 def get_monitoring_logs(filter: MonitoringLogFilter):
     try:
-        query = "SELECT monitoring_logs.id,monitored_services.name , monitoring_logs.service_id, monitoring_logs.status, monitoring_logs.message, monitoring_logs.checked_at FROM monitoring_logs left join monitored_services on monitored_services.id = monitoring_logs.service_id "
+        query = "SELECT monitoring_logs.id, monitored_services.name, monitoring_logs.service_id, monitoring_logs.status, monitoring_logs.message, monitoring_logs.checked_at FROM monitoring_logs LEFT JOIN monitored_services ON monitored_services.id = monitoring_logs.service_id "
         conditions = []
         params = []
 
         if filter.id is not None:
-            conditions.append("service_id = %s")
+            conditions.append("monitoring_logs.service_id = %s")
             params.append(filter.id)
 
         if filter.start_time and filter.end_time:
-            conditions.append("checked_at BETWEEN %s AND %s")
+            conditions.append("monitoring_logs.checked_at BETWEEN %s AND %s")
             params.extend([filter.start_time, filter.end_time])
         elif filter.start_time:
-            conditions.append("checked_at >= %s")
+            conditions.append("monitoring_logs.checked_at >= %s")
             params.append(filter.start_time)
         elif filter.end_time:
-            conditions.append("checked_at <= %s")
+            conditions.append("monitoring_logs.checked_at <= %s")
             params.append(filter.end_time)
 
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        query += " ORDER BY checked_at DESC"
+        query += " ORDER BY monitoring_logs.checked_at DESC"
 
         with get_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
