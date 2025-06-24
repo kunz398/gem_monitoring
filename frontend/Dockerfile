@@ -1,5 +1,8 @@
-# Multi-stage Dockerfile for React (Development optimized)
-FROM node:18-alpine as base
+# PM2-based Dockerfile for React
+FROM node:18-alpine
+
+# Install PM2 globally
+RUN npm install -g pm2
 
 WORKDIR /app
 
@@ -9,38 +12,17 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Development stage
-FROM base as development
-
 # Copy source code
 COPY . .
 
-# Expose port
-EXPOSE 3000
-
-# Start development server with hot reload
-CMD ["npm", "start"]
-
-# Build stage
-FROM base as build
-
-# Copy source code
-COPY . .
+# Create logs directory for PM2
+RUN mkdir -p logs
 
 # Build the application
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine as production
-
-# Copy built assets from build stage
-COPY --from=build /app/build /usr/share/nginx/html
-
-# Copy custom nginx config if needed
-# COPY nginx.conf /etc/nginx/nginx.conf
-
 # Expose port
-EXPOSE 80
+EXPOSE 3000
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Start with PM2
+CMD ["pm2-runtime", "start", "ecosystem.config.js"]
