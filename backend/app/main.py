@@ -27,7 +27,7 @@ app.add_middleware(
 
 templates = Jinja2Templates(directory="app/templates")
 
-app.include_router(endpoints.router, prefix="/api")
+app.include_router(endpoints.router, prefix="/service")
 
 
 def extract_pydantic_fields(model_class):
