@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes import endpoints
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
+from app.db import close_connection_pool
 
 app = FastAPI(title="Monitoring API")
 
@@ -27,8 +28,12 @@ app.add_middleware(
 
 templates = Jinja2Templates(directory="app/templates")
 
-app.include_router(endpoints.router, prefix="/api")
+app.include_router(endpoints.router, prefix="/service")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connection pool on application shutdown"""
+    close_connection_pool()
 
 def extract_pydantic_fields(model_class):
     """Extract fields from a Pydantic model"""

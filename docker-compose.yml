@@ -34,6 +34,7 @@ services:
     env_file:
       - .env
     environment:
+      - REACT_APP_API_URL=http://localhost:8001/service
       - PORT=3000
       - HOST=0.0.0.0
       - WDS_SOCKET_HOST=localhost

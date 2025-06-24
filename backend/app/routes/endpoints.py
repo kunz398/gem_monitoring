@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body, BackgroundT
 from pydantic import BaseModel, IPvAnyAddress, constr, Field
 from typing import List, Optional
 from app.auth import verify_api_key
-from app.db import get_connection  # Using psycopg2 connection for simplicity here
+from app.db import get_connection, get_connection_pool  # Using connection pool
 import psycopg2.extras
 import subprocess
 from datetime import datetime
@@ -131,6 +131,23 @@ class CronStatusOut(BaseModel):
 def get_status():
     return {"status": "status ok"}
 
+@router.get("/db-pool-status", summary="Check database connection pool status", dependencies=[Depends(verify_api_key)])
+def get_db_pool_status():
+    """Get database connection pool status"""
+    try:
+        pool = get_connection_pool()
+        return {
+            "pool_type": "SimpleConnectionPool",
+            "min_connections": 1,
+            "max_connections": 10,
+            "pool_status": "active"
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "pool_status": "unavailable"
+        }
+
 @router.post("/ping", summary="Ping test for an IP", dependencies=[Depends(verify_api_key)])
 def ping_test(request: PingRequest):
     ip = str(request.ip)
@@ -190,112 +207,140 @@ def netcat_test(request: NetcatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error running netcat: {str(e)}")
 
-# Utility function for DB query execution
+# Utility function for DB query execution with connection pool
 def fetch_all_services():
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM monitored_services ORDER BY id")
-            return cur.fetchall()
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM monitored_services ORDER BY id")
+                return cur.fetchall()
+    except Exception as e:
+        print(f"Database error in fetch_all_services: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 def fetch_service(service_id: int):
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM monitored_services WHERE id = %s", (service_id,))
-            return cur.fetchone()
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM monitored_services WHERE id = %s", (service_id,))
+                return cur.fetchone()
+    except Exception as e:
+        print(f"Database error in fetch_service: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 def fetch_monitor_log(log_id: int):
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM monitoring_logs WHERE id = %s", (log_id,))
-            return cur.fetchone()
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM monitoring_logs WHERE id = %s", (log_id,))
+                return cur.fetchone()
+    except Exception as e:
+        print(f"Database error in fetch_monitor_log: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 def insert_service(service: ServiceCreate):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO monitored_services (
-                    name, ip_address, port, protocol, check_interval_sec, 
-                    interval_type, interval_value, interval_unit, comment
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """, (
-                service.name, str(service.ip_address), service.port, service.protocol, 
-                service.check_interval_sec, service.interval_type, service.interval_value, 
-                service.interval_unit, service.comment
-            ))
-            result = cur.fetchone()
-            service_id = result[0] if result else None
-            conn.commit()
-            
-            if service_id is None:
-                raise Exception("Failed to insert service")
-            
-            # Create cron job for the new service
-            try:
-                cron_manager.add_service_cronjob(
-                    service_id, service.name, 
-                    service.interval_type or 'seconds', 
-                    service.interval_value or 60, 
-                    service.interval_unit or 'seconds'
-                )
-            except Exception as e:
-                print(f"Warning: Failed to create cron job for service {service_id}: {e}")
-            
-            return service_id
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO monitored_services (
+                        name, ip_address, port, protocol, check_interval_sec, 
+                        interval_type, interval_value, interval_unit, comment
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    service.name, str(service.ip_address), service.port, service.protocol, 
+                    service.check_interval_sec, service.interval_type, service.interval_value, 
+                    service.interval_unit, service.comment
+                ))
+                result = cur.fetchone()
+                service_id = result[0] if result else None
+                conn.commit()
+                
+                if service_id is None:
+                    raise Exception("Failed to insert service")
+                
+                # Create cron job for the new service
+                try:
+                    cron_manager.add_service_cronjob(
+                        service_id, service.name, 
+                        service.interval_type or 'seconds', 
+                        service.interval_value or 60, 
+                        service.interval_unit or 'seconds'
+                    )
+                except Exception as e:
+                    print(f"Warning: Failed to create cron job for service {service_id}: {e}")
+                
+                return service_id
+    except Exception as e:
+        print(f"Database error in insert_service: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 def insert_monitor_log(monitor_log: MonitoringLogCreate) -> int:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO monitoring_logs (service_id, status, message, comment)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-            """, (monitor_log.service_id, monitor_log.status, monitor_log.message, monitor_log.comment))
-            result = cur.fetchone()
-            conn.commit()
-            if not result:
-                raise Exception("Failed to insert monitoring log")
-            return result[0]
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO monitoring_logs (service_id, status, message, comment)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                """, (monitor_log.service_id, monitor_log.status, monitor_log.message, monitor_log.comment))
+                result = cur.fetchone()
+                conn.commit()
+                if not result:
+                    raise Exception("Failed to insert monitoring log")
+                return result[0]
+    except Exception as e:
+        print(f"Database error in insert_monitor_log: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 def update_service(service_id: int, service_update: ServiceUpdate):
-    fields = []
-    values = []
-    update_data = service_update.dict(exclude_unset=True)
-    
-    if not update_data:
-        return False  # Nothing to update
-    
-    for key, value in update_data.items():
-        fields.append(f"{key} = %s")
-        # Convert ip_address back to string for DB
-        if key == "ip_address":
-            value = str(value)
-        values.append(value)
+    try:
+        fields = []
+        values = []
+        update_data = service_update.dict(exclude_unset=True)
+        
+        if not update_data:
+            return False  # Nothing to update
+        
+        for key, value in update_data.items():
+            fields.append(f"{key} = %s")
+            # Convert ip_address back to string for DB
+            if key == "ip_address":
+                value = str(value)
+            values.append(value)
 
-    if not fields:
-        return False  # Nothing to update
+        if not fields:
+            return False  # Nothing to update
 
-    set_clause = ", ".join(fields)
-    values.append(service_id)
+        set_clause = ", ".join(fields)
+        values.append(service_id)
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(f"""
-                UPDATE monitored_services SET {set_clause} WHERE id = %s
-            """, values)
-            updated = cur.rowcount
-            conn.commit()
-            return updated > 0
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"""
+                    UPDATE monitored_services SET {set_clause} WHERE id = %s
+                """, values)
+                updated = cur.rowcount
+                conn.commit()
+                return updated > 0
+    except Exception as e:
+        print(f"Database error in update_service: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 def delete_service(service_id: int):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM monitored_services WHERE id = %s", (service_id,))
-            deleted = cur.rowcount
-            conn.commit()
-            return deleted > 0
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM monitored_services WHERE id = %s", (service_id,))
+                deleted = cur.rowcount
+                conn.commit()
+                return deleted > 0
+    except Exception as e:
+        print(f"Database error in delete_service: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 # API endpoints
 @router.get("/services", response_model=List[ServiceOut], dependencies=[Depends(verify_api_key)])
@@ -381,34 +426,38 @@ def api_monitor_all_services_bg(background_tasks: BackgroundTasks):
 ##Monitoring logs table##
 @router.post("/monitoring_logs", response_model=List[MonitoringLogOut], dependencies=[Depends(verify_api_key)])
 def get_monitoring_logs(filter: MonitoringLogFilter):
-    query = "SELECT monitoring_logs.id,monitored_services.name , monitoring_logs.service_id, monitoring_logs.status, monitoring_logs.message, monitoring_logs.checked_at FROM monitoring_logs left join monitored_services on monitored_services.id = monitoring_logs.service_id "
-    conditions = []
-    params = []
+    try:
+        query = "SELECT monitoring_logs.id,monitored_services.name , monitoring_logs.service_id, monitoring_logs.status, monitoring_logs.message, monitoring_logs.checked_at FROM monitoring_logs left join monitored_services on monitored_services.id = monitoring_logs.service_id "
+        conditions = []
+        params = []
 
-    if filter.id is not None:
-        conditions.append("service_id = %s")
-        params.append(filter.id)
+        if filter.id is not None:
+            conditions.append("service_id = %s")
+            params.append(filter.id)
 
-    if filter.start_time and filter.end_time:
-        conditions.append("checked_at BETWEEN %s AND %s")
-        params.extend([filter.start_time, filter.end_time])
-    elif filter.start_time:
-        conditions.append("checked_at >= %s")
-        params.append(filter.start_time)
-    elif filter.end_time:
-        conditions.append("checked_at <= %s")
-        params.append(filter.end_time)
+        if filter.start_time and filter.end_time:
+            conditions.append("checked_at BETWEEN %s AND %s")
+            params.extend([filter.start_time, filter.end_time])
+        elif filter.start_time:
+            conditions.append("checked_at >= %s")
+            params.append(filter.start_time)
+        elif filter.end_time:
+            conditions.append("checked_at <= %s")
+            params.append(filter.end_time)
 
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
 
-    query += " ORDER BY checked_at DESC"
+        query += " ORDER BY checked_at DESC"
 
-    with get_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(query, tuple(params))
-            logs = cur.fetchall()
-            return logs
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(query, tuple(params))
+                logs = cur.fetchall()
+                return logs
+    except Exception as e:
+        print(f"Database error in get_monitoring_logs: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 # Cronjob Management Endpoints
 @router.get("/cronjobs", response_model=List[CronJobOut], dependencies=[Depends(verify_api_key)])
