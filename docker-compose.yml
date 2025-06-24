@@ -34,7 +34,7 @@ services:
       - .env
     environment:
       - BROWSER=none
-      - REACT_APP_API_URL=http://localhost:8001/service
+      - REACT_APP_API_URL=https://opmthredds.gem.spc.int/service
       - PORT=3000
       - HOST=0.0.0.0
       - WDS_SOCKET_HOST=localhost

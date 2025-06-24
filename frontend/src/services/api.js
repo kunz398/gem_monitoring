@@ -1,5 +1,5 @@
 // src/api.js
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8001/service';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://opmthredds.gem.spc.int/service';
 const API_KEY = process.env.REACT_APP_API_KEY || 'ssshh';
 
 // Generic API request function

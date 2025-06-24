@@ -71,7 +71,7 @@ function Admin() {
   const validateApiKey = async (key) => {
     try {
       // Make a test API call to validate the key
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8001/service'}/services`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://opmthredds.gem.spc.int/service'}/services`, {
         headers: {
           'X-API-Key': key,
           'Content-Type': 'application/json'
