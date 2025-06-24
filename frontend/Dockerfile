@@ -18,6 +18,11 @@ COPY . .
 # Create logs directory for PM2
 RUN mkdir -p logs
 
+# Fix all permission issues
+RUN chmod +x node_modules/.bin/* && \
+    chmod -R 755 /app && \
+    npm cache clean --force
+
 # Build the application
 RUN npm run build
 
