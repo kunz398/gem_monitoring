@@ -18,10 +18,10 @@ COPY . .
 # Create logs directory for PM2
 RUN mkdir -p logs
 
-# Fix all permission issues
+# Fix permissions for react-scripts and all binaries
 RUN chmod +x node_modules/.bin/* && \
-    chmod -R 755 /app && \
-    npm cache clean --force
+    chmod +x node_modules/.bin/react-scripts && \
+    ls -la node_modules/.bin/react-scripts
 
 # Build the application
 RUN npm run build
