@@ -21,6 +21,7 @@ Password for user myuser: mypassword
 Password for user gem_user: P@ssword123
 
 
+
 ### DB Creation
 --CREATE TABLE public.test_table (
 --    id SERIAL PRIMARY KEY,
@@ -93,4 +94,16 @@ python -m test_code.db_test
 ------
 
 service cron status
+docker exec -it gem_monitoring_devapi_1 tail -f /var/log/cron/monitoring.log
+
 tail -f /var/log/cron/monitoring.log
+---------
+
+docker-compose down
+
+docker cp monitoring_db_backup.sql gem_monitoring_db_1:/monitoring_db_backup.sql
+docker exec -it gem_monitoring_db_1 bash
+
+psql --U gem_user -d monitoring_db -f /monitoring_db_backup.sql
+
+docker-compose up --build -d

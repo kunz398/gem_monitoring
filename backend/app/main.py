@@ -2,10 +2,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import endpoints
+from routes import endpoints
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from app.db import close_connection_pool
+from db import close_connection_pool
 
 app = FastAPI(
     title="Monitoring API",
