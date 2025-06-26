@@ -1,5 +1,5 @@
 # app/monitor.py
-from app.db import get_connection
+from db import get_connection
 import psycopg2.extras
 import subprocess
 import time
