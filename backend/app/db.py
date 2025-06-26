@@ -13,10 +13,10 @@ def get_connection_pool():
         _connection_pool = psycopg2.pool.SimpleConnectionPool(
             minconn=1,
             maxconn=10,
-            dbname=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            host=os.getenv("DB_HOST"),
+            dbname=os.getenv('DB_NAME', 'monitoring_db'),
+            user=os.getenv('DB_USER', 'gem_user'),
+            password=os.getenv('DB_PASSWORD', 'P@ssword123'),
+            host=os.getenv('DB_HOST', 'db'),
             port=os.getenv("DB_PORT", 5432)
         )
     return _connection_pool
