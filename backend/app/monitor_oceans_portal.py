@@ -87,7 +87,7 @@ def get_task_json():
 def check_tasks_in_monitoring_table(tasks_json):
     """
     Check which tasks are already in monitored_services.
-    Insert any missing ones based on their 'when' value.
+
     """
     if not tasks_json:
         return []

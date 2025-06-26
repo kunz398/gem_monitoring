@@ -37,6 +37,15 @@ DB_CONFIG = {
     'port': int(os.getenv('DB_PORT', '5432'))
 }
 
+# DB_CONFIG = {
+#     'dbname': os.getenv('DB_NAME', 'monitoring_db'),
+#     'user': os.getenv('DB_USER', 'postgres'),
+#     'password': os.getenv('DB_PASSWORD', 'postgres'),
+#     'host': os.getenv('DB_HOST', 'localhost'),
+#     'port': int(os.getenv('DB_PORT', '5432'))
+# }
+
+
 class MonitoringDaemon:
     def __init__(self):
         """Initialize the monitoring daemon"""
