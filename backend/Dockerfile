@@ -93,13 +93,13 @@ RUN echo '#!/bin/bash' > /usr/local/bin/start.sh && \
     echo 'if [ -f .env ]; then' >> /usr/local/bin/start.sh && \
     echo '    export $(grep -v "^#" .env | xargs)' >> /usr/local/bin/start.sh && \
     echo 'fi' >> /usr/local/bin/start.sh && \
-    echo 'nohup python3 /app/app/monitor_daemon.py > /var/log/cron/monitoring.log 2>&1 &' >> /usr/local/bin/start.sh && \
+    echo 'cd /app/app && nohup python3 monitor_daemon.py > /var/log/cron/monitoring.log 2>&1 &' >> /usr/local/bin/start.sh && \
     echo 'echo $! > /tmp/monitor_daemon.pid' >> /usr/local/bin/start.sh && \
     echo 'echo "Monitoring daemon started"' >> /usr/local/bin/start.sh && \
     echo '' >> /usr/local/bin/start.sh && \
     echo '# Start the Python application' >> /usr/local/bin/start.sh && \
     echo 'echo "Starting Python application..."' >> /usr/local/bin/start.sh && \
-    echo 'cd /app/app && exec python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload' >> /usr/local/bin/start.sh && \
+    echo 'exec python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload' >> /usr/local/bin/start.sh && \
     chmod +x /usr/local/bin/start.sh
 
 EXPOSE 8001
