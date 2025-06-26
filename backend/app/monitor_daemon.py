@@ -14,8 +14,11 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 
+# Add parent directory to Python path so we can use the same imports as FastAPI
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Import ocean service check functionality
-from monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
+from app.monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
 
 
 # Setup logging
