@@ -10,6 +10,15 @@ def get_connection_pool():
     """Get or create the database connection pool"""
     global _connection_pool
     if _connection_pool is None:
+        # _connection_pool = psycopg2.pool.SimpleConnectionPool(
+        #     minconn=1,
+        #     maxconn=10,
+        #     dbname=os.getenv('DB_NAME', 'monitoring_db'),
+        #     user=os.getenv('DB_USER', 'postgres'),
+        #     password=os.getenv('DB_PASSWORD', 'postgres'),
+        #     host=os.getenv('DB_HOST', 'localhost'),
+        #     port=os.getenv("DB_PORT", 5432)
+        # )
         _connection_pool = psycopg2.pool.SimpleConnectionPool(
             minconn=1,
             maxconn=10,

@@ -175,12 +175,16 @@ def process_ocean_task_status_exact(dataset, task):
         download_file_suffix = '_for_20250706to20251026.nc'
     
     # Extract date strings
-    next_date_str = next_download_file[len(download_file_prefix):-len(download_file_suffix)]
-    last_date_str = last_download_file[len(download_file_prefix):-len(download_file_suffix)]
-    
-    # Parse dates using exact logic from monitor_oceans_portal.py
-    next_start_date, next_end_date = parse_ocean_date_exact(next_date_str, download_file_infix, task_name, download_file_prefix, download_file_suffix, next_download_file)
-    last_start_date, last_end_date = parse_ocean_date_exact(last_date_str, download_file_infix, task_name, download_file_prefix, download_file_suffix, last_download_file)
+    if next_download_file and last_download_file:
+        next_date_str = next_download_file[len(download_file_prefix):-len(download_file_suffix)]
+        last_date_str = last_download_file[len(download_file_prefix):-len(download_file_suffix)]
+        
+        # Parse dates using exact logic from monitor_oceans_portal.py
+        next_start_date, next_end_date = parse_ocean_date_exact(next_date_str, download_file_infix, task_name, download_file_prefix, download_file_suffix, next_download_file)
+        last_start_date, last_end_date = parse_ocean_date_exact(last_date_str, download_file_infix, task_name, download_file_prefix, download_file_suffix, last_download_file)
+    else:
+        next_start_date, next_end_date = "none", "none"
+        last_start_date, last_end_date = "none", "none"
     
     # Determine status based on frequency using exact logic
     if when == "monthly":
@@ -192,6 +196,9 @@ def process_ocean_task_status_exact(dataset, task):
 
 def parse_ocean_date_exact(date_str, infix, task_name, prefix, suffix, full_filename):
     """Parse ocean date string using exact logic from monitor_oceans_portal.py"""
+    if full_filename is None:
+        return "none", "none"
+        
     if task_name == 'download_bluelink_daily_forecast':
         return "none", "none"
     
@@ -394,6 +401,7 @@ def populate_ocean_tasks_in_monitoring_table():
     Check which ocean tasks are already in monitored_services.
     Insert any missing ones based on their 'when' value.
     """
+
     try:
         # Fetch data from Ocean Portal APIs
         dataset_data = get_dataset_json()
@@ -406,7 +414,7 @@ def populate_ocean_tasks_in_monitoring_table():
         # Sort data by ID
         dataset_data = sort_json_by_id(dataset_data)
         task_data = sort_json_by_id(task_data)
-        
+
         # Process dataset data to determine frequency (matching monitor_oceans_portal.py logic)
         for dataset in dataset_data:
             if dataset['frequency_hours'] != 0:
@@ -419,9 +427,9 @@ def populate_ocean_tasks_in_monitoring_table():
         # Create task names and determine intervals
         task_names = []
         for task in task_data:
-            task_name = f"{task['id']}: {task['short_name']}"
+            task_name = f"{task['id']}: {task['task_name']}"
             task_names.append(task_name)
-            
+
             # Find corresponding dataset
             dataset = None
             for ds in dataset_data:
@@ -448,7 +456,7 @@ def populate_ocean_tasks_in_monitoring_table():
                 else:
                     print(f"Skipping unknown frequency: {when}")
                     continue
-                
+
                 # Check if task already exists in monitored_services
                 with get_connection() as conn:
                     with conn.cursor() as cur:
