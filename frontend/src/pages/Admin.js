@@ -122,7 +122,7 @@ function Admin() {
 
   const handleBackToDashboard = () => {
     // Navigate back to dashboard - you might want to use React Router here
-    window.location.href = '/';
+    window.location.href = '/monitoring/';
   };
 
   const fetchServices = async () => {
