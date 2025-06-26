@@ -50,7 +50,7 @@ function ServiceDetail() {
   };
  const handleBackToDashboard = () => {
     // Navigate back to dashboard - you might want to use React Router here
-    window.location.href = '/';
+    window.location.href = '/monitoring/';
   };
   useEffect(() => {
     // Only fetch logs on component mount if we have a start time

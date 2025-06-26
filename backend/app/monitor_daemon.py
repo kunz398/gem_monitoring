@@ -14,6 +14,9 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 
+# Import ocean service check functionality
+from app.monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -34,11 +37,20 @@ DB_CONFIG = {
     'port': os.getenv('DB_PORT', '5432')
 }
 
+# DB_CONFIG = {
+#     'dbname': os.getenv('DB_NAME', 'monitoring_db'),
+#     'user': os.getenv('DB_USER', 'postgres'),
+#     'password': os.getenv('DB_PASSWORD', 'postgres'),
+#     'host': os.getenv('DB_HOST', 'localhost'),
+#     'port': int(os.getenv('DB_PORT', '5432'))
+# }
+
 class MonitoringDaemon:
     def __init__(self):
         """Initialize the monitoring daemon"""
         self.running = True
         self.service_schedules = {}  # service_id -> next_run_time
+        self.last_ocean_population = None  # Track when we last populated ocean tasks
         
         # Set up signal handlers
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -147,7 +159,12 @@ class MonitoringDaemon:
         service_id = service["id"]
         service_name = service["name"]
 
-        # Build command
+        # Check if this is an ocean middleware service
+        if "ocean-middleware.spc.int/middleware/api/" in ip:
+            self.check_ocean_service(service)
+            return
+
+        # Build command for regular services
         if protocol == "ping":
             command = ["ping", "-c", "2", ip]
         elif protocol == "http":
@@ -222,13 +239,50 @@ class MonitoringDaemon:
             if conn:
                 self.return_connection(conn)
     
+    def check_ocean_service(self, service: Dict):
+        """Check ocean middleware services using the ocean_service_check function"""
+        try:
+            result = ocean_service_check(service)
+            logger.info(f"Checked ocean service {service['id']} ({service['name']}): {result['status']}")
+        except Exception as e:
+            logger.error(f"Error checking ocean service {service['id']}: {e}")
+            # Log the error to monitoring_logs
+            self.log_monitoring_result(service['id'], "unknown", f"Error: {str(e)}", "Ocean Portal API check")
+            self.update_service_status(service['id'], "unknown")
+    
+    def populate_ocean_tasks(self):
+        """Populate ocean tasks in the monitoring table"""
+        try:
+            logger.info("Populating ocean tasks in monitoring table...")
+            populate_ocean_tasks_in_monitoring_table()
+            self.last_ocean_population = datetime.now()
+            logger.info("Ocean tasks population completed")
+        except Exception as e:
+            logger.error(f"Error populating ocean tasks: {e}")
+
+    def should_populate_ocean_tasks(self) -> bool:
+        """Check if we should populate ocean tasks (every hour)"""
+        if self.last_ocean_population is None:
+            return True
+        
+        time_since_last = datetime.now() - self.last_ocean_population
+        return time_since_last.total_seconds() >= 3600  # 1 hour
+
     def run(self):
         """Main daemon loop"""
         logger.info("Starting monitoring daemon...")
         
+        # Populate ocean tasks on startup
+        self.populate_ocean_tasks()
+        
         while self.running:
             try:
                 current_time = datetime.now()
+                
+                # Check if we should populate ocean tasks (every hour)
+                if self.should_populate_ocean_tasks():
+                    self.populate_ocean_tasks()
+                
                 services = self.get_active_services()
                 
                 # Initialize schedules for new services
