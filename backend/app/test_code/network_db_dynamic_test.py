@@ -104,4 +104,4 @@ def monitor_all_services():
 
 # ---------- RUN ----------
 if __name__ == "__main__":
-    monitor_all_services()
+    monitor_all_services() 

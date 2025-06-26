@@ -14,12 +14,8 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 
-# Add parent directory to Python path so we can use the same imports as FastAPI
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 # Import ocean service check functionality
 from app.monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
-
 
 # Setup logging
 logging.basicConfig(
@@ -38,16 +34,8 @@ DB_CONFIG = {
     'user': os.getenv('DB_USER', 'gem_user'),
     'password': os.getenv('DB_PASSWORD', 'P@ssword123'),
     'host': os.getenv('DB_HOST', 'db'),
-    'port': os.getenv('DB_PORT', '5432')
+    'port': int(os.getenv('DB_PORT', '5432'))
 }
-
-# DB_CONFIG = {
-#     'dbname': os.getenv('DB_NAME', 'monitoring_db'),
-#     'user': os.getenv('DB_USER', 'postgres'),
-#     'password': os.getenv('DB_PASSWORD', 'postgres'),
-#     'host': os.getenv('DB_HOST', 'localhost'),
-#     'port': int(os.getenv('DB_PORT', '5432'))
-# }
 
 class MonitoringDaemon:
     def __init__(self):
@@ -271,7 +259,7 @@ class MonitoringDaemon:
         
         time_since_last = datetime.now() - self.last_ocean_population
         return time_since_last.total_seconds() >= 3600  # 1 hour
-
+    
     def run(self):
         """Main daemon loop"""
         logger.info("Starting monitoring daemon...")
