@@ -48,12 +48,14 @@ RUN echo '#!/bin/bash' > /usr/local/bin/watch-crontab && \
     echo 'done' >> /usr/local/bin/watch-crontab && \
     chmod +x /usr/local/bin/watch-crontab
 
-COPY requirements.txt .
+COPY app/ /app/app/
+COPY requirements.txt /app/
+COPY monitor_daemon.py /app/
+
 RUN pip3 install --no-cache-dir -r requirements.txt
-COPY . .
 
 # Make the monitoring daemon executable
-RUN chmod +x /app/app/monitor_daemon.py
+RUN chmod +x /app/monitor_daemon.py
 
 # Create startup script that starts both cron and Python server
 RUN echo '#!/bin/bash' > /usr/local/bin/start.sh && \
@@ -93,7 +95,7 @@ RUN echo '#!/bin/bash' > /usr/local/bin/start.sh && \
     echo 'if [ -f .env ]; then' >> /usr/local/bin/start.sh && \
     echo '    export $(grep -v "^#" .env | xargs)' >> /usr/local/bin/start.sh && \
     echo 'fi' >> /usr/local/bin/start.sh && \
-    echo 'nohup python3 /app/app/monitor_daemon.py > /var/log/cron/monitoring.log 2>&1 &' >> /usr/local/bin/start.sh && \
+    echo 'nohup python3 /app/monitor_daemon.py > /var/log/cron/monitoring.log 2>&1 &' >> /usr/local/bin/start.sh && \
     echo 'echo $! > /tmp/monitor_daemon.pid' >> /usr/local/bin/start.sh && \
     echo 'echo "Monitoring daemon started"' >> /usr/local/bin/start.sh && \
     echo '' >> /usr/local/bin/start.sh && \

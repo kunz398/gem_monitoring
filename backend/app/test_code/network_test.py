@@ -29,5 +29,4 @@ print("\nCurl test (www.google.com):")
 if run_command(["curl", "-Is", "http://www.google.com"]):
     print("Curl test: Success")
 else:
-    print("Curl test: Failed")
-
+    print("Curl test: Failed") 

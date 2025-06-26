@@ -2,12 +2,6 @@
 """
 Test script to verify ocean integration
 """
-import sys
-import os
-
-# Add the app directory to the Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
-
 from app.monitor import populate_ocean_tasks_in_monitoring_table, ocean_service_check
 from app.db import get_connection
 import psycopg2.extras

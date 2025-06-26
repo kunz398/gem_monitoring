@@ -18,4 +18,4 @@ def query_test_table():
         conn.close()
 
 if __name__ == "__main__":
-    query_test_table()
+    query_test_table() 
