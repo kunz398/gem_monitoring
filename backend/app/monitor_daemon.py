@@ -15,7 +15,8 @@ import psycopg2.extras
 import psycopg2.pool
 
 # Import ocean service check functionality
-from app.monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
+from monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
+
 
 # Setup logging
 logging.basicConfig(
