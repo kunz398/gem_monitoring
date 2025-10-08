@@ -44,7 +44,7 @@ CREATE TABLE public.monitored_services (
     id integer NOT NULL,
     name text NOT NULL,
     ip_address text NOT NULL,
-    port integer NOT NULL,
+    port integer,
     protocol text NOT NULL,
     check_interval_sec integer DEFAULT 60,
     interval_type text DEFAULT 'seconds'::text,
@@ -58,6 +58,7 @@ CREATE TABLE public.monitored_services (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     comment text,
+    display_order integer,
     is_active boolean DEFAULT true,
     CONSTRAINT monitored_services_interval_type_check CHECK ((interval_type = ANY (ARRAY['seconds'::text, 'minutes'::text, 'hours'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'specific_day'::text]))),
     CONSTRAINT monitored_services_interval_unit_check CHECK ((interval_unit = ANY (ARRAY['seconds'::text, 'minutes'::text, 'hours'::text, 'days'::text, 'weeks'::text, 'months'::text])))
@@ -187,7 +188,7 @@ ALTER TABLE ONLY public.test_table ALTER COLUMN id SET DEFAULT nextval('public.t
 -- Data for Name: monitored_services; Type: TABLE DATA; Schema: public; Owner: gem_user
 --
 
-COPY public.monitored_services (id, name, ip_address, port, protocol, check_interval_sec, interval_type, interval_value, interval_unit, cron_expression, cron_job_name, last_status, success_count, failure_count, created_at, updated_at, comment, is_active) FROM stdin;
+COPY public.monitored_services (id, name, ip_address, port, protocol, check_interval_sec, interval_type, interval_value, interval_unit, cron_expression, cron_job_name, last_status, success_count, failure_count, created_at, updated_at, comment, display_order, is_active) FROM stdin;
 \.
 
 

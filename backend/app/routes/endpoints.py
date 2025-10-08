@@ -26,13 +26,14 @@ class ServiceBase(BaseModel):
     name: str = Field(..., min_length=1)
     # Accepts both IPs and domain names
     ip_address: str = Field(..., min_length=1)
-    port: int
+    port: Optional[int] = None
     protocol: str = Field(..., min_length=1)  # e.g. ping, curl, telnet
     check_interval_sec: Optional[int] = 60  # Keep for backward compatibility
     interval_type: Optional[str] = Field(default='seconds')
     interval_value: Optional[int] = Field(default=60, ge=1)
     interval_unit: Optional[str] = Field(default='seconds')
     comment: Optional[str] = None
+    display_order: Optional[int] = Field(default=None, ge=0)
 
 class ServiceCreate(ServiceBase):
     pass
@@ -48,12 +49,13 @@ class ServiceUpdate(BaseModel):
     interval_unit: Optional[str] = Field(default=None)
     comment: Optional[str] = Field(default=None)
     is_active: Optional[bool] = Field(default=None)
+    display_order: Optional[int] = Field(default=None, ge=0)
 
 class ServiceOut(BaseModel):
     id: int
     name: str
     ip_address: str
-    port: int
+    port: Optional[int] = None
     protocol: str
     check_interval_sec: int
     interval_type: str
@@ -66,9 +68,10 @@ class ServiceOut(BaseModel):
     failure_count: int
     created_at: datetime
     updated_at: datetime
-    comment: str
+    comment: Optional[str] = None
     is_active: bool
     checked_at: Optional[datetime] = None  # Add default None
+    display_order: Optional[int] = None
 
 
 
@@ -213,7 +216,13 @@ def fetch_all_services():
     try:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM monitored_services ORDER BY id")
+                cur.execute("""
+                    SELECT * FROM monitored_services
+                    ORDER BY
+                        CASE WHEN display_order IS NULL THEN 1 ELSE 0 END,
+                        display_order ASC NULLS LAST,
+                        id
+                """)
                 return cur.fetchall()
     except Exception as e:
         print(f"Database error in fetch_all_services: {e}")
@@ -243,17 +252,30 @@ def insert_service(service: ServiceCreate):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                display_order_value = service.display_order
+
+                if display_order_value is None:
+                    cur.execute("SELECT MAX(display_order) FROM monitored_services")
+                    max_order = cur.fetchone()[0]
+                    if max_order is None:
+                        display_order_value = 0
+                    else:
+                        display_order_value = int(max_order) + 1
+                else:
+                    display_order_value = int(display_order_value)
+
                 cur.execute("""
                     INSERT INTO monitored_services (
                         name, ip_address, port, protocol, check_interval_sec, 
-                        interval_type, interval_value, interval_unit, comment
+                        interval_type, interval_value, interval_unit, comment,
+                        display_order
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     service.name, str(service.ip_address), service.port, service.protocol, 
                     service.check_interval_sec, service.interval_type, service.interval_value, 
-                    service.interval_unit, service.comment
+                    service.interval_unit, service.comment, display_order_value
                 ))
                 result = cur.fetchone()
                 service_id = result[0] if result else None
@@ -311,6 +333,8 @@ def update_service(service_id: int, service_update: ServiceUpdate):
             # Convert ip_address back to string for DB
             if key == "ip_address":
                 value = str(value)
+            if key == "display_order" and value is not None:
+                value = int(value)
             values.append(value)
 
         if not fields:

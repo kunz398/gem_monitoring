@@ -320,7 +320,7 @@ def check_daily_status_exact(last_start_date):
 def check_service(service: dict) -> dict:
     protocol = service["protocol"]
     ip = service["ip_address"]
-    port = str(service["port"])
+    port = service["port"]
     service_id = service["id"]
 
     # Check if this is an ocean middleware service
@@ -335,9 +335,18 @@ def check_service(service: dict) -> dict:
     if protocol == "ping":
         command = ["ping", "-c", "2", ip]
     elif protocol == "http":
-        command = ["curl", "-Is", f"http://{ip}:{port}"]
+        # Only append port if it's a valid, non-default port
+        url = f"http://{ip}"
+        if port and str(port).isdigit() and int(port) not in (0, 80):
+            url += f":{port}"
+        command = ["curl", "-Is", url]
+    elif protocol == "https":
+        url = f"https://{ip}"
+        if port and str(port).isdigit() and int(port) not in (0, 443):
+            url += f":{port}"
+        command = ["curl", "-Is", url]
     elif protocol == "tcp":
-        command = ["nc", "-zv", ip, port]
+        command = ["nc", "-zv", ip, str(port)]
     else:
         output = f"Unsupported protocol: {protocol}"
         log_monitoring_result(service_id, "down", output, "")

@@ -1,5 +1,5 @@
 // src/pages/Admin.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { servicesApi } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -7,6 +7,7 @@ import '../App.css';
 
 function Admin() {
   const { theme } = useTheme();
+  const themeClass = theme ? `theme-${theme}` : 'theme-default';
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -30,10 +31,12 @@ function Admin() {
     interval_type: 'seconds',
     interval_value: 60,
     interval_unit: 'seconds',
-    comment: ''
+    comment: '',
+    check_interval_sec: 60,
+    display_order: ''
   });
 
-  const protocols = ['http', 'https', 'tcp', 'ping', 'curl','heatbeat'];
+  const protocols = ['http', 'https', 'tcp', 'ping', 'curl', 'heartbeat'];
   const intervalTypes = [
     { value: 'seconds', label: 'Seconds' },
     { value: 'minutes', label: 'Minutes' },
@@ -62,11 +65,6 @@ function Admin() {
     }
   }, []);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchServices();
-    }
-  }, [isAuthenticated]);
 
   const validateApiKey = async (key) => {
     try {
@@ -95,6 +93,24 @@ function Admin() {
     }
   };
 
+  const resetForm = useCallback(() => {
+    setFormData({
+      name: '',
+      ip_address: '',
+      port: '',
+      protocol: 'http',
+      interval_type: 'seconds',
+      interval_value: 60,
+      interval_unit: 'seconds',
+      comment: '',
+      check_interval_sec: 60,
+      display_order: ''
+    });
+    setSelectedService(null);
+    setShowForm(false);
+    setFormMode('create');
+  }, []);
+
   const handleApiKeySubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -110,7 +126,7 @@ function Admin() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     setIsAuthenticated(false);
     setApiKeyInput('');
     setAuthError('');
@@ -118,19 +134,36 @@ function Admin() {
     sessionStorage.removeItem('admin_api_key');
     // Reset all form state
     resetForm();
-  };
+  }, [resetForm]);
 
   const handleBackToDashboard = () => {
     // Navigate back to dashboard - you might want to use React Router here
     window.location.href = '/monitoring/';
   };
 
-  const fetchServices = async () => {
+  const fetchServices = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await servicesApi.getAll();
-      setServices(data || []);
+      const sortedServices = [...(data || [])].sort((a, b) => {
+        const orderA = a.display_order;
+        const orderB = b.display_order;
+
+        const hasOrderA = typeof orderA === 'number';
+        const hasOrderB = typeof orderB === 'number';
+
+        if (hasOrderA && hasOrderB) {
+          if (orderA === orderB) {
+            return a.id - b.id;
+          }
+          return orderA - orderB;
+        }
+        if (hasOrderA) return -1;
+        if (hasOrderB) return 1;
+        return a.id - b.id;
+      });
+      setServices(sortedServices);
     } catch (err) {
       setError(err.message || err.output);
       setServices([]);
@@ -141,31 +174,68 @@ function Admin() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [handleLogout]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchServices();
+    }
+  }, [isAuthenticated, fetchServices]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'port' || name === 'check_interval_sec' ? parseInt(value) || 0 : value
-    }));
+    setFormData(prev => {
+      // If protocol changes to http/https, clear port
+      if (name === 'protocol') {
+        if (value === 'http' || value === 'https') {
+          return {
+            ...prev,
+            protocol: value,
+            port: '',
+          };
+        }
+        return {
+          ...prev,
+          protocol: value
+        };
+      }
+      if (name === 'port') {
+        if (value === '') {
+          return {
+            ...prev,
+            port: ''
+          };
+        }
+        const parsedPort = parseInt(value, 10);
+        return Number.isNaN(parsedPort)
+          ? prev
+          : {
+              ...prev,
+              port: parsedPort
+            };
+      }
+      if (name === 'interval_value' || name === 'check_interval_sec' || name === 'display_order') {
+        if (value === '') {
+          return {
+            ...prev,
+            [name]: ''
+          };
+        }
+        const parsedNumber = parseInt(value, 10);
+        return Number.isNaN(parsedNumber)
+          ? prev
+          : {
+              ...prev,
+              [name]: parsedNumber
+            };
+      }
+      return {
+        ...prev,
+        [name]: value
+      };
+    });
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      ip_address: '',
-      port: '',
-      protocol: 'http',
-      interval_type: 'seconds',
-      interval_value: 60,
-      interval_unit: 'seconds',
-      comment: ''
-    });
-    setSelectedService(null);
-    setShowForm(false);
-    setFormMode('create');
-  };
 
   const handleCreate = () => {
     setFormMode('create');
@@ -179,12 +249,14 @@ function Admin() {
     setFormData({
       name: service.name,
       ip_address: service.ip_address,
-      port: service.port,
+      port: service.protocol === 'http' || service.protocol === 'https' ? '' : service.port,
       protocol: service.protocol,
       interval_type: service.interval_type,
       interval_value: service.interval_value,
       interval_unit: service.interval_unit,
-      comment: service.comment || ''
+      comment: service.comment || '',
+      check_interval_sec: service.check_interval_sec || 60,
+      display_order: typeof service.display_order === 'number' ? service.display_order : ''
     });
     setShowForm(true);
   };
@@ -197,12 +269,14 @@ function Admin() {
       setFormData({
         name: service.name,
         ip_address: service.ip_address,
-        port: service.port,
+        port: service.protocol === 'http' || service.protocol === 'https' ? '' : service.port,
         protocol: service.protocol,
         interval_type: service.interval_type,
         interval_value: service.interval_value,
         interval_unit: service.interval_unit,
-        comment: service.comment || ''
+        comment: service.comment || '',
+        check_interval_sec: service.check_interval_sec || 60,
+        display_order: typeof service.display_order === 'number' ? service.display_order : ''
       });
       setShowForm(true);
     } catch (err) {
@@ -216,16 +290,66 @@ function Admin() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
     try {
+      // Prepare payload: only include port if protocol is not http/https
+      const normalizedIntervalValue =
+        formData.interval_value === '' ? 1 : parseInt(formData.interval_value, 10);
+      const normalizedCheckInterval =
+        formData.check_interval_sec === '' ? 60 : parseInt(formData.check_interval_sec, 10);
+      const normalizedDisplayOrder =
+        formData.display_order === '' ? null : parseInt(formData.display_order, 10);
+
+      if (!Number.isInteger(normalizedIntervalValue) || normalizedIntervalValue <= 0) {
+        alert('Please enter a positive number for the interval value.');
+        setLoading(false);
+        return;
+      }
+
+      if (!Number.isInteger(normalizedCheckInterval) || normalizedCheckInterval <= 0) {
+        alert('Please enter a positive number for the check interval (seconds).');
+        setLoading(false);
+        return;
+      }
+
+      if (normalizedDisplayOrder !== null) {
+        if (!Number.isInteger(normalizedDisplayOrder) || normalizedDisplayOrder < 0) {
+          alert('Please enter a non-negative whole number for the display position.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const payload = {
+        ...formData,
+        interval_value: normalizedIntervalValue,
+        check_interval_sec: normalizedCheckInterval,
+        display_order: normalizedDisplayOrder
+      };
+
+      if (payload.protocol === 'http' || payload.protocol === 'https') {
+        delete payload.port;
+      } else {
+        const parsedPort = Number(formData.port);
+        if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
+          alert('Please enter a valid port between 1 and 65535 for this protocol.');
+          setLoading(false);
+          return;
+        }
+        payload.port = parsedPort;
+      }
+
+  payload.comment = payload.comment?.trim() || null;
+      if (payload.display_order === null) {
+        delete payload.display_order;
+      }
+
       if (formMode === 'create') {
-        await servicesApi.create(formData);
+        await servicesApi.create(payload);
         alert('Service created successfully!');
       } else if (formMode === 'edit') {
-        await servicesApi.update(selectedService.id, formData);
+        await servicesApi.update(selectedService.id, payload);
         alert('Service updated successfully!');
       }
-      
       resetForm();
       await fetchServices();
     } catch (err) {
@@ -262,7 +386,7 @@ function Admin() {
 
   // Helper function to get interval description
   const getIntervalDescription = () => {
-    const { interval_type, interval_value, interval_unit } = formData;
+    const { interval_type, interval_value } = formData;
     
     switch (interval_type) {
       case 'seconds':
@@ -296,7 +420,7 @@ function Admin() {
 
   // Helper function to get interval description for a specific service
   const getServiceIntervalDescription = (service) => {
-    const { interval_type, interval_value, interval_unit } = service;
+    const { interval_type, interval_value } = service;
     
     switch (interval_type) {
       case 'seconds':
@@ -321,7 +445,7 @@ function Admin() {
   // If not authenticated, show login form
   if (!isAuthenticated) {
     return (
-      <div className="dashboard">
+  <div className={`dashboard ${themeClass}`}>
         <header className="app-header">
           <h1>Admin Panel - Authentication Required</h1>
           <div className="header-controls">
@@ -384,7 +508,7 @@ function Admin() {
 
   // If authenticated, show the normal admin interface
   return (
-    <div className="dashboard">
+  <div className={`dashboard ${themeClass}`}>
       <header className="app-header">
         <h1>Admin Panel - Service Management</h1>
         <div className="header-controls">
@@ -609,20 +733,23 @@ function Admin() {
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label htmlFor="port">Port</label>
-                    <input
-                      type="number"
-                      id="port"
-                      name="port"
-                      value={formData.port}
-                      onChange={handleInputChange}
-                      min="0"
-                      max="65535"
-                      disabled={formMode === 'view'}
-                      placeholder="e.g., 80, 443, 8080"
-                    />
-                  </div>
+                  {/* Only show port if protocol is not http/https */}
+                  {(formData.protocol !== 'http' && formData.protocol !== 'https') && (
+                    <div className="form-group">
+                      <label htmlFor="port">Port</label>
+                      <input
+                        type="number"
+                        id="port"
+                        name="port"
+                        value={formData.port}
+                        onChange={handleInputChange}
+                        min="0"
+                        max="65535"
+                        disabled={formMode === 'view'}
+                        placeholder="e.g., 80, 443, 8080"
+                      />
+                    </div>
+                  )}
 
                   <div className="form-group">
                     <label htmlFor="protocol">Protocol *</label>
@@ -692,6 +819,20 @@ function Admin() {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="display_order">Display Position</label>
+                    <input
+                      type="number"
+                      id="display_order"
+                      name="display_order"
+                      value={formData.display_order}
+                      onChange={handleInputChange}
+                      min="0"
+                      disabled={formMode === 'view'}
+                      placeholder="0 = Show first"
+                    />
                   </div>
 
                   <div className="form-group full-width">
@@ -766,6 +907,7 @@ function Admin() {
               <thead>
                 <tr>
                   <th>ID</th>
+                  <th>Order</th>
                   <th>Name</th>
                   <th>Address</th>
                   <th>Protocol</th>
@@ -779,6 +921,7 @@ function Admin() {
                 {(services || []).map((service) => (
                   <tr key={service.id}>
                     <td>{service.id}</td>
+                    <td>{typeof service.display_order === 'number' ? service.display_order : '—'}</td>
                     <td>{service.name}</td>
                     <td>{service.ip_address}:{service.port}</td>
                     <td>
