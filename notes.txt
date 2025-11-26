@@ -1,4 +1,14 @@
 #run composer to bring everything up
+docker-compose up -d
+## run npm local
+set PORT=8001 && npm start
+
+######run test directly in the container
+>docker exec -it monitoring-devapi-1 python test.py
+
+######go in bash mode
+>docker exec -it monitoring-devapi-1 /bin/sh
+#run composer to bring everything up
 docker-compose up
 ## run npm local
 set PORT=8001 && npm start

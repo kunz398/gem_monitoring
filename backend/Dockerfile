@@ -101,10 +101,10 @@ RUN echo '#!/bin/bash' > /usr/local/bin/start.sh && \
     echo '' >> /usr/local/bin/start.sh && \
     echo '# Start the Python application' >> /usr/local/bin/start.sh && \
     echo 'echo "Starting Python application..."' >> /usr/local/bin/start.sh && \
-    echo 'exec python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload' >> /usr/local/bin/start.sh && \
+    echo 'exec python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload' >> /usr/local/bin/start.sh && \
     chmod +x /usr/local/bin/start.sh
 
-EXPOSE 8001
+EXPOSE 8011
 
 # Use the startup script
 CMD ["/usr/local/bin/start.sh"]

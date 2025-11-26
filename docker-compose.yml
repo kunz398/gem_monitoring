@@ -3,11 +3,11 @@ services:
   devapi:
     cap_add:
       - NET_RAW
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8001:8001"
+      - "8011:8011"
     volumes:
       - ./backend:/app
     working_dir: /app
@@ -24,7 +24,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3111:3111"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -32,12 +32,12 @@ services:
       - .env
     environment:
       - BROWSER=none
-      - REACT_APP_API_URL=http://localhost:8001/service
+      - REACT_APP_API_URL=http://localhost:8011/service
       # - REACT_APP_API_URL=https://opmthredds.gem.spc.int/service
-      - PORT=3000
+      - PORT=3111
       - HOST=0.0.0.0
       - WDS_SOCKET_HOST=localhost
-      - WDS_SOCKET_PORT=3000
+      - WDS_SOCKET_PORT=3111
       - CHOKIDAR_USEPOLLING=true
     depends_on:
       - devapi
@@ -61,6 +61,7 @@ services:
 
 volumes:
   pgdata:
+
 
 networks:
   app-network:
