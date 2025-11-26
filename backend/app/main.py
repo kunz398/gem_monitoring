@@ -18,12 +18,12 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # React development server
-        "http://127.0.0.1:3000",  # Alternative localhost
-        "http://frontend:3000", 
-        "http://localhost:8001",
+        "http://localhost:3111",  # React development server
+        "http://127.0.0.1:3111",  # Alternative localhost
+        "http://frontend:3111", 
+        "http://localhost:8011",
         "http://localhost:3001",
-        "http://172.25.160.1:8001/",
+        "http://172.25.160.1:8011/",
         "https://opmthredds.gem.spc.int/"  
     ],
     allow_credentials=True,

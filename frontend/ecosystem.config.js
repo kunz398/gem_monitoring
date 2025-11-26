@@ -5,7 +5,7 @@ module.exports = {
     args: 'node_modules/react-scripts/scripts/start.js',
     env: {
       NODE_ENV: 'development',
-      PORT: 3000,
+      PORT: 3111,
       HOST: '0.0.0.0'
     },
     instances: 1,

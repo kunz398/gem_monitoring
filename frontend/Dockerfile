@@ -16,7 +16,7 @@ COPY . .
 RUN mkdir -p logs
 
 # Expose React dev server port
-EXPOSE 3000
+EXPOSE 3111
 
 # Start using PM2
 CMD ["pm2-runtime", "ecosystem.config.js"]
