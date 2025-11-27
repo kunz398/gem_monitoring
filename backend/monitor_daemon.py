@@ -160,6 +160,11 @@ class MonitoringDaemon:
         service_id = service["id"]
         service_name = service["name"]
 
+        # Skip external services - they report their own status via API
+        if protocol == "external":
+            logger.debug(f"Skipping external service {service_id} ({service_name})")
+            return
+
         # Check if this is an ocean middleware service
         if "ocean-middleware.spc.int/middleware/api/" in ip:
             self.check_ocean_service(service)

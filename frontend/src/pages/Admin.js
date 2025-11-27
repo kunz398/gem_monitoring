@@ -36,7 +36,7 @@ function Admin() {
     display_order: ''
   });
 
-  const protocols = ['http', 'https', 'tcp', 'ping', 'curl', 'heartbeat'];
+  const protocols = ['http', 'https', 'tcp', 'ping', 'curl', 'heartbeat', 'external'];
   const intervalTypes = [
     { value: 'seconds', label: 'Seconds' },
     { value: 'minutes', label: 'Minutes' },
@@ -185,6 +185,28 @@ function Admin() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => {
+      // If protocol is changed to external, clear port and set default intervals
+      if (name === 'protocol' && value === 'external') {
+        return {
+          ...prev,
+          protocol: value,
+          port: '',
+          interval_type: 'seconds',
+          interval_value: 60,
+          interval_unit: 'seconds'
+        };
+      }
+      
+      // If protocol is changed from external to something else, set defaults
+      if (name === 'protocol' && prev.protocol === 'external' && value !== 'external') {
+        return {
+          ...prev,
+          protocol: value,
+          interval_type: 'seconds',
+          interval_value: 60,
+          interval_unit: 'seconds'
+        };
+      }
       // If protocol changes to http/https, clear port
       if (name === 'protocol') {
         if (value === 'http' || value === 'https') {
@@ -292,23 +314,29 @@ function Admin() {
     setLoading(true);
     try {
       // Prepare payload: only include port if protocol is not http/https
-      const normalizedIntervalValue =
-        formData.interval_value === '' ? 1 : parseInt(formData.interval_value, 10);
-      const normalizedCheckInterval =
-        formData.check_interval_sec === '' ? 60 : parseInt(formData.check_interval_sec, 10);
+      // For external services, interval values are optional
+      const isExternal = formData.protocol === 'external';
+      
+      const normalizedIntervalValue = isExternal ? 60 : 
+        (formData.interval_value === '' ? 1 : parseInt(formData.interval_value, 10));
+      const normalizedCheckInterval = isExternal ? 60 :
+        (formData.check_interval_sec === '' ? 60 : parseInt(formData.check_interval_sec, 10));
       const normalizedDisplayOrder =
         formData.display_order === '' ? null : parseInt(formData.display_order, 10);
 
-      if (!Number.isInteger(normalizedIntervalValue) || normalizedIntervalValue <= 0) {
-        alert('Please enter a positive number for the interval value.');
-        setLoading(false);
-        return;
-      }
+      // Only validate interval values for non-external services
+      if (!isExternal) {
+        if (!Number.isInteger(normalizedIntervalValue) || normalizedIntervalValue <= 0) {
+          alert('Please enter a positive number for the interval value.');
+          setLoading(false);
+          return;
+        }
 
-      if (!Number.isInteger(normalizedCheckInterval) || normalizedCheckInterval <= 0) {
-        alert('Please enter a positive number for the check interval (seconds).');
-        setLoading(false);
-        return;
+        if (!Number.isInteger(normalizedCheckInterval) || normalizedCheckInterval <= 0) {
+          alert('Please enter a positive number for the check interval (seconds).');
+          setLoading(false);
+          return;
+        }
       }
 
       if (normalizedDisplayOrder !== null) {
@@ -326,7 +354,10 @@ function Admin() {
         display_order: normalizedDisplayOrder
       };
 
-      if (payload.protocol === 'http' || payload.protocol === 'https') {
+      // Handle port based on protocol
+      if (payload.protocol === 'external') {
+        payload.port = 0; // External services don't use ports, set to 0
+      } else if (payload.protocol === 'http' || payload.protocol === 'https') {
         delete payload.port;
       } else {
         const parsedPort = Number(formData.port);
@@ -733,8 +764,8 @@ function Admin() {
                     />
                   </div>
 
-                  {/* Only show port if protocol is not http/https */}
-                  {(formData.protocol !== 'http' && formData.protocol !== 'https') && (
+                  {/* Only show port if protocol is not http/https/external */}
+                  {(formData.protocol !== 'http' && formData.protocol !== 'https' && formData.protocol !== 'external') && (
                     <div className="form-group">
                       <label htmlFor="port">Port</label>
                       <input
@@ -769,26 +800,29 @@ function Admin() {
                     </select>
                   </div>
 
-                  <div className="form-group">
-                    <label htmlFor="interval_type">Interval Type *</label>
-                    <select
-                      id="interval_type"
-                      name="interval_type"
-                      value={formData.interval_type}
-                      onChange={handleInputChange}
-                      required
-                      disabled={formMode === 'view'}
-                    >
+                  {formData.protocol !== 'external' && (
+                    <div className="form-group">
+                      <label htmlFor="interval_type">Interval Type *</label>
+                      <select
+                        id="interval_type"
+                        name="interval_type"
+                        value={formData.interval_type}
+                        onChange={handleInputChange}
+                        required={formData.protocol !== 'external'}
+                        disabled={formMode === 'view'}
+                      >
                       {intervalTypes.map(type => (
                         <option key={type.value} value={type.value}>
                           {type.label}
                         </option>
                       ))}
-                    </select>
-                  </div>
+                      </select>
+                    </div>
+                  )}
 
-                  <div className="form-group">
-                    <label htmlFor="interval_value">Interval Value *</label>
+                  {formData.protocol !== 'external' && (
+                    <div className="form-group">
+                      <label htmlFor="interval_value">Interval Value *</label>
                     <input
                       type="number"
                       id="interval_value"
@@ -797,29 +831,32 @@ function Admin() {
                       onChange={handleInputChange}
                       min="1"
                       max={formData.interval_type === 'specific_day' ? 31 : 999}
-                      required
+                      required={formData.protocol !== 'external'}
                       disabled={formMode === 'view'}
                       placeholder={formData.interval_type === 'specific_day' ? "1-31" : "e.g., 1, 5, 15"}
                     />
-                  </div>
+                    </div>
+                  )}
 
-                  <div className="form-group">
-                    <label htmlFor="interval_unit">Interval Unit *</label>
-                    <select
-                      id="interval_unit"
-                      name="interval_unit"
-                      value={formData.interval_unit}
-                      onChange={handleInputChange}
-                      required
-                      disabled={formMode === 'view'}
-                    >
-                      {intervalUnits.map(unit => (
-                        <option key={unit.value} value={unit.value}>
-                          {unit.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {formData.protocol !== 'external' && (
+                    <div className="form-group">
+                      <label htmlFor="interval_unit">Interval Unit *</label>
+                      <select
+                        id="interval_unit"
+                        name="interval_unit"
+                        value={formData.interval_unit}
+                        onChange={handleInputChange}
+                        required={formData.protocol !== 'external'}
+                        disabled={formMode === 'view'}
+                      >
+                        {intervalUnits.map(unit => (
+                          <option key={unit.value} value={unit.value}>
+                            {unit.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div className="form-group">
                     <label htmlFor="display_order">Display Position</label>
@@ -836,10 +873,24 @@ function Admin() {
                   </div>
 
                   <div className="form-group full-width">
-                    <label>Interval Description</label>
-                    <div className="interval-description">
-                      <strong>{getIntervalDescription()}</strong>
-                    </div>
+                    {formData.protocol === 'external' ? (
+                      <>
+                        <label>External Service Info</label>
+                        <div className="interval-description" style={{color: '#2196F3'}}>
+                          <strong>📡 This service will be monitored externally via API calls.</strong>
+                          <p style={{fontSize: '0.9em', marginTop: '0.5rem'}}>
+                            Use the <code>/service/monitor_log</code> endpoint to send status updates from your external application.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <label>Interval Description</label>
+                        <div className="interval-description">
+                          <strong>{getIntervalDescription()}</strong>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="form-group full-width">

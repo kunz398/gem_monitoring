@@ -284,16 +284,19 @@ def insert_service(service: ServiceCreate):
                 if service_id is None:
                     raise Exception("Failed to insert service")
                 
-                # Create cron job for the new service
-                try:
-                    cron_manager.add_service_cronjob(
-                        service_id, service.name, 
-                        service.interval_type or 'seconds', 
-                        service.interval_value or 60, 
-                        service.interval_unit or 'seconds'
-                    )
-                except Exception as e:
-                    print(f"Warning: Failed to create cron job for service {service_id}: {e}")
+                # Create cron job for the new service (skip for external services)
+                if service.protocol != 'external':
+                    try:
+                        cron_manager.add_service_cronjob(
+                            service_id, service.name, 
+                            service.interval_type or 'seconds', 
+                            service.interval_value or 60, 
+                            service.interval_unit or 'seconds'
+                        )
+                    except Exception as e:
+                        print(f"Warning: Failed to create cron job for service {service_id}: {e}")
+                else:
+                    print(f"Skipping cron job creation for external service {service_id}")
                 
                 return service_id
     except Exception as e:
@@ -514,14 +517,15 @@ def reload_cronjobs():
                 # Clear existing cron jobs
                 cron_manager.clear_all_cronjobs()
                 
-                # Recreate cron jobs for all active services
+                # Recreate cron jobs for all active services (skip external services)
                 for service in services:
-                    cron_manager.add_service_cronjob(
-                        service['id'], service['name'],
-                        service['interval_type'] or 'seconds',
-                        service['interval_value'] or 60,
-                        service['interval_unit'] or 'seconds'
-                    )
+                    if service['protocol'] != 'external':
+                        cron_manager.add_service_cronjob(
+                            service['id'], service['name'],
+                            service['interval_type'] or 'seconds',
+                            service['interval_value'] or 60,
+                            service['interval_unit'] or 'seconds'
+                        )
                 
                 return {"message": "Cron jobs reloaded successfully"}
     except Exception as e:
