@@ -347,6 +347,12 @@ def check_service(service: dict) -> dict:
         command = ["curl", "-Is", url]
     elif protocol == "tcp":
         command = ["nc", "-zv", ip, str(port)]
+    elif protocol == "external":
+        # External services are monitored via API posts, not automatic checks
+        status = "unknown"
+        output = "External service - status updated via API"
+        log_monitoring_result(service_id, status, output, "External monitoring")
+        return {"service_id": service_id, "status": status, "output": output}
     else:
         output = f"Unsupported protocol: {protocol}"
         log_monitoring_result(service_id, "down", output, "")
