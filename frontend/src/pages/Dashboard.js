@@ -231,12 +231,14 @@ function Dashboard() {
                     </div>
 
                     <div className="service-actions">
-                      <button 
-                        onClick={(event) => handleMonitorSingle(event, service.id)} 
-                        className="btn btn-small"
-                      >
-                        Test Now
-                      </button>
+                      {service.protocol !== 'external' && (
+                        <button 
+                          onClick={(event) => handleMonitorSingle(event, service.id)} 
+                          className="btn btn-small"
+                        >
+                          Test Now
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

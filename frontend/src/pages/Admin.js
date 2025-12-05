@@ -15,6 +15,8 @@ function Admin() {
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState('create'); // 'create', 'edit', 'view'
   const [showHelp, setShowHelp] = useState(false);
+  const [showCodeSnippet, setShowCodeSnippet] = useState(false);
+  const [createdServiceId, setCreatedServiceId] = useState(null);
   
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -375,8 +377,15 @@ function Admin() {
       }
 
       if (formMode === 'create') {
-        await servicesApi.create(payload);
-        alert('Service created successfully!');
+        const result = await servicesApi.create(payload);
+        
+        // If external service, show code snippet with the service ID
+        if (payload.protocol === 'external' && result && result.id) {
+          setCreatedServiceId(result.id);
+          setShowCodeSnippet(true);
+        } else {
+          alert('Service created successfully!');
+        }
       } else if (formMode === 'edit') {
         await servicesApi.update(selectedService.id, payload);
         alert('Service updated successfully!');
@@ -1030,9 +1039,88 @@ function Admin() {
           </div>
         )}
       </main>
+
+      {/* Code Snippet Modal for External Services */}
+      {showCodeSnippet && (
+        <div className="modal-overlay" onClick={() => setShowCodeSnippet(false)}>
+          <div className="modal-content code-snippet-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>🎉 External Service Created!</h2>
+              <button className="modal-close" onClick={() => setShowCodeSnippet(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="code-snippet-intro">
+                Use this code snippet to send status updates from your application:
+              </p>
+              <pre className="code-snippet">
+{`import requests
+import time
+
+# Your API credentials
+API_URL = "http://localhost:8011"
+API_KEY = "ssshh"
+SERVICE_ID = ${createdServiceId}
+
+def send_status_update(status: str, response_time_ms: int = None, error_msg: str = None):
+    """
+    Send status update to monitoring system
     
+    Args:
+        status: "up" or "down"
+        response_time_ms: Response time in milliseconds (optional)
+        error_msg: Error message if status is down (optional)
+    """
+    url = f"{API_URL}/service/monitor_log"
+    headers = {"x-api-key": API_KEY}
+    
+    payload = {
+        "service_id": SERVICE_ID,
+        "status": status
+    }
+    
+    if response_time_ms is not None:
+        payload["response_time_ms"] = response_time_ms
+    if error_msg:
+        payload["error_msg"] = error_msg
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        response.raise_for_status()
+        print(f"Status update sent: {status}")
+        return True
+    except Exception as e:
+        print(f"Failed to send status: {e}")
+        return False
 
+# Example usage:
+# On successful operation
+send_status_update("up", response_time_ms=150)
 
+# On failure
+send_status_update("down", error_msg="Database connection failed")`}
+              </pre>
+              <div className="modal-actions">
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const codeText = document.querySelector('.code-snippet').textContent;
+                    navigator.clipboard.writeText(codeText);
+                    alert('Code copied to clipboard!');
+                  }}
+                >
+                  📋 Copy Code
+                </button>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => setShowCodeSnippet(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
