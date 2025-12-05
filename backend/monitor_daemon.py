@@ -279,15 +279,15 @@ class MonitoringDaemon:
         logger.info("Starting monitoring daemon...")
         
         # Populate ocean tasks on startup
-        self.populate_ocean_tasks()
+        # self.populate_ocean_tasks()
         
         while self.running:
             try:
                 current_time = datetime.now()
                 
                 # Check if we should populate ocean tasks (every hour)
-                if self.should_populate_ocean_tasks():
-                    self.populate_ocean_tasks()
+                # if self.should_populate_ocean_tasks():
+                #     self.populate_ocean_tasks()
                 
                 services = self.get_active_services()
                 
