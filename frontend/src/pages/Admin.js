@@ -1054,50 +1054,48 @@ function Admin() {
               </p>
               <pre className="code-snippet">
 {`import requests
-import time
 
-# Your API credentials
-API_URL = "http://localhost:8011"
-API_KEY = "ssshh"
+API_URL = 'https://opmthredds.gem.spc.int/monitor_log'
+API_KEY = 'ssshh'
 SERVICE_ID = ${createdServiceId}
 
-def send_status_update(status: str, response_time_ms: int = None, error_msg: str = None):
-    """
-    Send status update to monitoring system
-    
-    Args:
-        status: "up" or "down"
-        response_time_ms: Response time in milliseconds (optional)
-        error_msg: Error message if status is down (optional)
-    """
-    url = f"{API_URL}/service/monitor_log"
-    headers = {"x-api-key": API_KEY}
-    
-    payload = {
-        "service_id": SERVICE_ID,
-        "status": status
+def monitor_logs(payload: dict):
+    """Send monitoring log to API and print the response."""
+
+    HEADERS = {
+        'x-api-key': API_KEY,
+        'Content-Type': 'application/json'
     }
-    
-    if response_time_ms is not None:
-        payload["response_time_ms"] = response_time_ms
-    if error_msg:
-        payload["error_msg"] = error_msg
-    
+
+    response = requests.post(API_URL, json=payload, headers=HEADERS)
+
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
-        response.raise_for_status()
-        print(f"Status update sent: {status}")
-        return True
-    except Exception as e:
-        print(f"Failed to send status: {e}")
-        return False
+        print("Response JSON:", response.json())
+    except Exception:
+        print("Response Text:", response.text)
 
-# Example usage:
-# On successful operation
-send_status_update("up", response_time_ms=150)
+def main():
+    # Positive test case: service is up
+    positive_payload = {
+        "service_id": SERVICE_ID,
+        "status": "up",
+        "message": "Model Started Running",
+        "comment": "Service started successfully."
+    }
 
-# On failure
-send_status_update("down", error_msg="Database connection failed")`}
+    # Negative test case: service is down
+    negative_payload = {
+        "service_id": SERVICE_ID,
+        "status": "down",
+        "message": "Model Started Running",
+        "comment": "Service failed to start."
+    }
+
+    monitor_logs(positive_payload)
+    monitor_logs(negative_payload)
+
+if __name__ == "__main__":
+    main()`}
               </pre>
               <div className="modal-actions">
                 <button 

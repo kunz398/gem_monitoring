@@ -313,10 +313,30 @@ def insert_monitor_log(monitor_log: MonitoringLogCreate) -> int:
                     RETURNING id
                 """, (monitor_log.service_id, monitor_log.status, monitor_log.message, monitor_log.comment))
                 result = cur.fetchone()
-                conn.commit()
+                
                 if not result:
                     raise Exception("Failed to insert monitoring log")
-                return result[0]
+                
+                log_id = result[0]
+
+                # Update service status in monitored_services
+                # Only increment counts for 'up' or 'down' to avoid skewing stats with custom statuses
+                status_val = monitor_log.status
+                success_inc = 1 if status_val == 'up' else 0
+                failure_inc = 1 if status_val == 'down' else 0
+                
+                cur.execute("""
+                    UPDATE monitored_services
+                    SET
+                        last_status = %s,
+                        success_count = success_count + %s,
+                        failure_count = failure_count + %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                """, (status_val, success_inc, failure_inc, monitor_log.service_id))
+
+                conn.commit()
+                return log_id
     except Exception as e:
         print(f"Database error in insert_monitor_log: {e}")
         raise HTTPException(status_code=500, detail="Database error")
