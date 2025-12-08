@@ -34,6 +34,7 @@ class ServiceBase(BaseModel):
     interval_unit: Optional[str] = Field(default='seconds')
     comment: Optional[str] = None
     display_order: Optional[int] = Field(default=None, ge=0)
+    type: Optional[str] = Field(default='servers')
 
 class ServiceCreate(ServiceBase):
     pass
@@ -50,6 +51,7 @@ class ServiceUpdate(BaseModel):
     comment: Optional[str] = Field(default=None)
     is_active: Optional[bool] = Field(default=None)
     display_order: Optional[int] = Field(default=None, ge=0)
+    type: Optional[str] = Field(default=None)
 
 class ServiceOut(BaseModel):
     id: int
@@ -72,6 +74,7 @@ class ServiceOut(BaseModel):
     is_active: bool
     checked_at: Optional[datetime] = None  # Add default None
     display_order: Optional[int] = None
+    type: Optional[str] = None
 
 
 
@@ -268,14 +271,14 @@ def insert_service(service: ServiceCreate):
                     INSERT INTO monitored_services (
                         name, ip_address, port, protocol, check_interval_sec, 
                         interval_type, interval_value, interval_unit, comment,
-                        display_order
+                        display_order, type
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     service.name, str(service.ip_address), service.port, service.protocol, 
                     service.check_interval_sec, service.interval_type, service.interval_value, 
-                    service.interval_unit, service.comment, display_order_value
+                    service.interval_unit, service.comment, display_order_value, service.type
                 ))
                 result = cur.fetchone()
                 service_id = result[0] if result else None

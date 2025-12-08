@@ -47,6 +47,7 @@ CREATE TABLE public.monitored_services (
     port integer,
     protocol text NOT NULL,
     check_interval_sec integer DEFAULT 60,
+    type text DEFAULT 'servers',
     interval_type text DEFAULT 'seconds'::text,
     interval_value integer DEFAULT 60,
     interval_unit text DEFAULT 'seconds'::text,
