@@ -2314,3 +2314,98 @@ input.error {
   background-color: var(--bg-secondary);
   color: var(--text-primary);
 }
+
+/* Type Summary Cards for Grouped Dashboard View */
+.type-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.type-summary-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.type-summary-card:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-2px);
+  border-color: var(--btn-primary);
+}
+
+.type-summary-card h3 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  border-bottom: 2px solid var(--bg-tertiary);
+  padding-bottom: 0.5rem;
+}
+
+.type-stats {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1rem;
+  padding: 0.5rem;
+  background-color: var(--bg-secondary);
+  border-radius: 0.5rem;
+}
+
+.stat-row strong {
+  font-size: 1.1rem;
+}
+
+.stat-row.all-good {
+  color: #166534;
+  background-color: #dcfce7;
+}
+
+.stat-row.has-issues {
+  color: #854d0e;
+  background-color: #fef9c3;
+}
+
+.stat-row.error {
+  color: #dc2626;
+  background-color: #fef2f2;
+}
+
+[data-theme="dark"] .stat-row.all-good {
+  background-color: rgba(22, 101, 52, 0.2);
+  color: #4ade80;
+}
+
+[data-theme="dark"] .stat-row.has-issues {
+  background-color: rgba(161, 98, 7, 0.2);
+  color: #fcd34d;
+}
+
+[data-theme="dark"] .stat-row.error {
+  background-color: rgba(220, 38, 38, 0.2);
+  color: #f87171;
+}
+
+.click-hint {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: auto;
+  font-style: italic;
+}
