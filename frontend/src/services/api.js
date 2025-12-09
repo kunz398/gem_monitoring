@@ -80,28 +80,44 @@ const apiRequest = async (endpoint, options = {}) => {
 export const servicesApi = {
   // Get all services
   getAll: () => apiRequest('/services'),
-  
+
   // Get single service
   getById: (id) => apiRequest(`/services/${id}`),
-  
+
   // Create new service
-  create: (serviceData) => 
+  create: (serviceData) =>
     apiRequest('/services', {
       method: 'POST',
       body: JSON.stringify(serviceData),
     }),
-  
+
   // Update service
   update: (id, serviceData) =>
     apiRequest(`/services/${id}`, {
       method: 'PUT',
       body: JSON.stringify(serviceData),
     }),
-  
+
   // Delete service
   delete: (id) =>
     apiRequest(`/services/${id}`, {
       method: 'DELETE',
+    }),
+
+  // Sync Cloud Services
+  syncCloud: () =>
+    apiRequest('/cloud/sync', {
+      method: 'POST',
+    }),
+
+  // Get grouping preferences
+  getGroupingPreferences: () => apiRequest('/grouping-preferences'),
+
+  // Update grouping preferences
+  updateGroupingPreferences: (prefs) =>
+    apiRequest('/grouping-preferences', {
+      method: 'POST',
+      body: JSON.stringify(prefs),
     }),
 };
 
@@ -109,14 +125,14 @@ export const servicesApi = {
 export const monitoringApi = {
   // Monitor all services
   monitorAll: () => apiRequest('/monitor/all', { method: 'POST' }),
-  
+
   // Monitor single service
   monitorSingle: (id) => apiRequest(`/monitor/${id}`, { method: 'POST' }),
-  
+
   // Monitor all in background
-  monitorAllBackground: () => 
+  monitorAllBackground: () =>
     apiRequest('/monitor/all/background', { method: 'POST' }),
-  
+
   // Get monitoring logs
   getLogs: (filter = {}) =>
     apiRequest('/monitoring_logs', {
@@ -129,14 +145,14 @@ export const monitoringApi = {
 export const utilityApi = {
   // Check API status
   getStatus: () => apiRequest('/status'),
-  
+
   // Ping test
   ping: (ip) =>
     apiRequest('/ping', {
       method: 'POST',
       body: JSON.stringify({ ip }),
     }),
-  
+
   // Netcat test
   netcat: (ip, port) =>
     apiRequest('/netcat', {

@@ -120,4 +120,5 @@ psql --U gem_user -d monitoring_db -f /monitoring_db_backup.sql
 docker-compose up --build -d
 
 #go in database
+docker exec -it  gem_monitoring-db-1 bash
 psql -U gem_user -d monitoring_db

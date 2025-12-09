@@ -1,7 +1,9 @@
 import React from 'react';
+import './Graph.css';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Area, AreaChart
+  PieChart, Pie, Cell, LineChart, Line, Area, AreaChart,
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
 
 const Graph = ({ data }) => {
@@ -126,23 +128,28 @@ const Graph = ({ data }) => {
     {
       id: 'reliability-score',
       title: 'Reliability Score',
-      icon: '📈',
+      icon: '🕸️',
       description: 'Service reliability scores based on success rates',
       data: getReliabilityData(),
       renderChart: (chartData) => (
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-            <XAxis dataKey="name" />
-            <YAxis domain={[0, 100]} />
-            <Tooltip formatter={(value) => [`${value}%`, 'Reliability']} />
-            <Area 
-              type="monotone" 
-              dataKey="reliability" 
-              stroke="#4ade80" 
-              fill="#4ade80" 
+        <ResponsiveContainer width="100%" height={400}>
+          <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
+            <PolarGrid />
+            <PolarAngleAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} />
+            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: 'var(--text-secondary)' }} />
+            <Radar
+              name="Reliability"
+              dataKey="reliability"
+              stroke="#4ade80"
+              fill="#4ade80"
               fillOpacity={0.6}
             />
-          </AreaChart>
+            <Tooltip 
+              contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              itemStyle={{ color: 'var(--text-primary)' }}
+              formatter={(value) => [`${value}%`, 'Reliability']}
+            />
+          </RadarChart>
         </ResponsiveContainer>
       )
     }
@@ -266,230 +273,7 @@ const Graph = ({ data }) => {
         ))}
       </div>
 
-      <style jsx>{`
-        .graph-container {
-          padding: 20px 0;
-        }
 
-        .graph-header {
-          margin-bottom: 32px;
-        }
-
-        .section-title {
-          text-align: center;
-          color: var(--text-primary);
-          font-size: 1.5rem;
-          font-weight: 600;
-          margin-bottom: 20px;
-          padding-bottom: 8px;
-        }
-
-        .graph-header {
-          margin-bottom: 32px;
-        }
-
-        .chart-cards-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-          gap: 24px;
-          margin-top: 24px;
-        }
-
-        .chart-card {
-          background: var(--card-bg);
-          border: 1px solid var(--border-color);
-          border-radius: 16px;
-          box-shadow: var(--shadow);
-          transition: all 0.3s ease;
-          overflow: hidden;
-        }
-
-        .chart-card:hover {
-          transform: translateY(-4px);
-          box-shadow: var(--shadow-hover);
-          border-color: var(--primary-color);
-        }
-
-        .chart-card-header {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          padding: 24px;
-          background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, transparent 100%);
-          border-bottom: 1px solid var(--border-color);
-        }
-
-        .chart-card-icon {
-          font-size: 2.5rem;
-          min-width: 56px;
-          height: 56px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 16px;
-          background: var(--secondary-bg);
-          border: 2px solid var(--border-color);
-        }
-
-        .chart-card-info {
-          flex: 1;
-        }
-
-        .chart-card-title {
-          color: var(--text-primary);
-          font-size: 1.5rem;
-          font-weight: 700;
-          margin: 0 0 6px 0;
-          line-height: 1.2;
-        }
-
-        .chart-card-description {
-          color: var(--text-secondary);
-          font-size: 0.875rem;
-          margin: 0;
-          line-height: 1.5;
-        }
-
-        .chart-card-content {
-          padding: 24px;
-        }
-
-        .chart-wrapper {
-          background: var(--secondary-bg);
-          border-radius: 12px;
-          padding: 20px;
-          margin-bottom: 20px;
-          border: 1px solid var(--border-color);
-        }
-
-        .chart-insights {
-          background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.02) 100%);
-          border: 1px solid rgba(34, 197, 94, 0.2);
-          border-radius: 12px;
-          padding: 16px 20px;
-        }
-
-        .insight {
-          color: var(--text-secondary);
-          font-size: 0.875rem;
-          line-height: 1.5;
-        }
-
-        .insight strong {
-          color: var(--text-primary);
-          font-weight: 600;
-        }
-
-        .no-data-chart {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 300px;
-          color: var(--text-secondary);
-          font-style: italic;
-          font-size: 1.1rem;
-        }
-
-        .chart-stats {
-          margin-bottom: 32px;
-        }
-
-        .stats-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-          gap: 20px;
-        }
-
-        .stat-item {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: var(--card-bg);
-          border: 1px solid var(--border-color);
-          border-radius: 12px;
-          padding: 20px;
-          transition: all 0.3s ease;
-        }
-
-
-        .stat-item:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--shadow);
-        }
-
-        .stat-label {
-          color: var(--text-secondary);
-          font-size: 0.875rem;
-          font-weight: 500;
-        }
-
-        .stat-value {
-          color: var(--text-primary);
-          font-size: 1.5rem;
-          font-weight: 700;
-        }
-
-        .stat-value.success {
-          color: #22c55e;
-        }
-
-        .stat-value.error {
-          color: #ef4444;
-        }
-
-        /* Responsive adjustments */
-        @media (max-width: 1200px) {
-          .chart-cards-grid {
-            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
-          }
-        }
-
-        @media (max-width: 768px) {
-          .chart-cards-grid {
-            grid-template-columns: 1fr;
-          }
-          
-          .stats-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-          
-          .chart-card-header {
-            padding: 20px;
-          }
-          
-          .chart-card-content {
-            padding: 20px;
-          }
-
-          .chart-card-icon {
-            font-size: 2rem;
-            min-width: 48px;
-            height: 48px;
-          }
-
-          .chart-card-title {
-            font-size: 1.25rem;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .stats-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .chart-cards-grid {
-            gap: 16px;
-          }
-
-          .chart-card-header {
-            padding: 16px;
-          }
-          
-          .chart-card-content {
-            padding: 16px;
-          }
-        }
-      `}</style>
     </div>
   );
 };

@@ -8,11 +8,17 @@ import sys
 import signal
 import logging
 import subprocess
+import requests
+import json
+import urllib3
 from datetime import datetime, timedelta
 from typing import Dict, List
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
+
+# Disable SSL warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import ocean service check functionality
 from app.monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
@@ -114,7 +120,7 @@ class MonitoringDaemon:
                 cur.execute("""
                     SELECT id, name, ip_address, port, protocol, 
                            interval_type, interval_value, interval_unit,
-                           last_status, success_count, failure_count
+                           last_status, success_count, failure_count, type
                     FROM monitored_services 
                     WHERE is_active = true 
                     ORDER BY id
@@ -152,6 +158,105 @@ class MonitoringDaemon:
         else:
             return current_time + timedelta(minutes=1)
     
+    def get_cloud_token(self):
+        """Get the cloud monitoring token from the database"""
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT configuration FROM dashboard_configs WHERE name = 'cloud-monitoring.corp.spc.int'")
+                result = cur.fetchone()
+                if result:
+                    return result[0]
+        except Exception as e:
+            logger.error(f"Error getting cloud token: {e}")
+        finally:
+            if conn:
+                self.return_connection(conn)
+        return None
+
+    def check_cloud_service(self, service: Dict):
+        """Check a Server Cloud service"""
+        service_id = service["id"]
+        service_name = service["name"]
+        
+        token = self.get_cloud_token()
+        if not token:
+            self.log_monitoring_result(service_id, "unknown", "No cloud token found in database", "Cloud API Check")
+            self.update_service_status(service_id, "unknown")
+            return
+
+        url = "https://cloud-monitoring.corp.spc.int/api/collections/systems/records"
+        params = {
+            "page": 1,
+            "perPage": 1,
+            "filter": f"name='{service_name}'"
+        }
+        headers = {
+            "Authorization": f"Bearer {token}"
+        }
+
+        try:
+            response = requests.get(url, params=params, headers=headers, verify=False, timeout=10)
+            
+            if response.status_code != 200:
+                self.log_monitoring_result(service_id, "unknown", f"API Error: {response.status_code} - {response.text}", f"GET {url}")
+                self.update_service_status(service_id, "unknown")
+                return
+
+            data = response.json()
+            items = data.get("items", [])
+            
+            if not items:
+                self.log_monitoring_result(service_id, "unknown", f"Service '{service_name}' not found in cloud monitoring", f"GET {url}")
+                self.update_service_status(service_id, "unknown")
+                return
+
+            item = items[0]
+            status = item.get("status", "unknown")
+            updated_at_str = item.get("updated")
+            
+            # Log the result
+            self.log_monitoring_result(service_id, status, f"Cloud status: {status}, Last updated: {updated_at_str}", f"GET {url}")
+            
+            # Update service status and updated_at time
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cur:
+                    # We need to update updated_at specifically from the cloud data
+                    # The standard update_service_status sets updated_at to NOW(), which is fine for local check time
+                    # But user requested "created and updated at would come from updated"
+                    # However, for monitoring logs, we usually want to know when WE checked it.
+                    # But the user said: "update the status and updated: ..."
+                    
+                    # Let's stick to the standard update first, but maybe we should also update the record with the cloud's updated time?
+                    # The user said: "all we need to do is update the status and updated"
+                    
+                    success = status == "up"
+                    cur.execute("""
+                        UPDATE monitored_services
+                        SET
+                            last_status = %s,
+                            success_count = success_count + %s,
+                            failure_count = failure_count + %s,
+                            updated_at = %s
+                        WHERE id = %s
+                    """, (status, 1 if success else 0, 0 if success else 1, updated_at_str, service_id))
+                    conn.commit()
+            except Exception as e:
+                logger.error(f"Error updating cloud service status {service_id}: {e}")
+            finally:
+                if conn:
+                    self.return_connection(conn)
+                    
+            logger.info(f"Checked cloud service {service_id} ({service_name}): {status}")
+
+        except Exception as e:
+            logger.error(f"Error checking cloud service {service_id}: {e}")
+            self.log_monitoring_result(service_id, "unknown", f"Exception: {str(e)}", f"GET {url}")
+            self.update_service_status(service_id, "unknown")
+
     def check_service(self, service: Dict):
         """Check a single service"""
         protocol = service["protocol"]
@@ -159,6 +264,13 @@ class MonitoringDaemon:
         port = str(service["port"])
         service_id = service["id"]
         service_name = service["name"]
+        
+        # Check for Server Cloud type
+        # We check the 'type' field if it exists in the service dict (it was added to the query in get_active_services)
+        service_type = service.get("type")
+        if service_type == "Server Cloud":
+            self.check_cloud_service(service)
+            return
 
         # Skip external services - they report their own status via API
         if protocol == "external":

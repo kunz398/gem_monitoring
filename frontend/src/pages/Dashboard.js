@@ -11,6 +11,27 @@ import { useNavigate } from 'react-router-dom';
 import '../App.css';
 import Graph from '../components/Graph';
 
+const SystemProgressBar = ({ value, label }) => {
+  let colorClass = 'progress-low';
+  if (value > 70) colorClass = 'progress-med';
+  if (value > 90) colorClass = 'progress-high';
+
+  return (
+    <div className="system-metric">
+      <div className="system-metric-header">
+        <span>{label}</span>
+        <span>{value.toFixed(1)}%</span>
+      </div>
+      <div className="system-progress-container">
+        <div
+          className={`system-progress-bar ${colorClass}`}
+          style={{ width: `${Math.min(value, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
 function Dashboard() {
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -20,16 +41,26 @@ function Dashboard() {
   const [apiStatus, setApiStatus] = useState(null);
   const [eventRefreshTrigger, setEventRefreshTrigger] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // Add sidebar state
-
-  // Dashboard view config
-  const [groupByType, setGroupByType] = useState(localStorage.getItem('gem_dashboard_group_by_type') === 'true');
-  const [selectedType, setSelectedType] = useState(null);
+  const [groupingPreferences, setGroupingPreferences] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
 
   useEffect(() => {
     checkApiStatus();
     document.title = 'Dashboard - Service Monitoring';
     fetchServices();
+    fetchGroupingPreferences();
   }, []);
+
+  const fetchGroupingPreferences = async () => {
+    try {
+      const prefs = await servicesApi.getGroupingPreferences();
+      if (prefs) {
+        setGroupingPreferences(prefs);
+      }
+    } catch (err) {
+      console.error('Failed to fetch grouping preferences:', err);
+    }
+  };
 
   const checkApiStatus = async () => {
     try {
@@ -95,8 +126,109 @@ function Dashboard() {
     });
   };
 
+  const renderServiceCard = (service) => {
+    if (service.is_external_system) {
+      const uptimeDays = Math.floor((service.system_info?.u || 0) / (60 * 60 * 24));
+      return (
+        <div
+          key={service.id}
+          className="service-card"
+          style={{
+            cursor: 'default',
+            border: (service.last_status || '').toLowerCase() === 'up' ? '2px solid #22c55e' :
+              (service.last_status || '').toLowerCase() === 'down' ? '2px solid #ef4444' :
+                '2px solid #f59e0b'
+          }}
+        >
+          <div className="service-header">
+            <h3>{service.name}</h3>
+            <span className={`status-badge ${service.last_status}`}>
+              {service.last_status}
+            </span>
+          </div>
+
+          <div className="service-details">
+            <div className="system-info-row">
+              <span className="system-label">Host</span>
+              <span className="system-value">{service.ip_address}</span>
+            </div>
+            <div className="system-info-row">
+              <span className="system-label">Kernel</span>
+              <span className="system-value">{service.system_info?.k}</span>
+            </div>
+
+            <SystemProgressBar value={service.system_info?.cpu || 0} label="CPU" />
+            <SystemProgressBar value={service.system_info?.mp || 0} label="Memory" />
+            <SystemProgressBar value={service.system_info?.dp || 0} label="Disk" />
+
+            <div className="system-meta">
+              <span>Uptime: {uptimeDays} days</span>
+              <span>Updated: {new Date(service.updated_at).toLocaleTimeString()}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={service.id}
+        className="service-card"
+        onClick={() => handleCardClick(service)}
+        style={{
+          cursor: 'pointer',
+          border: (service.last_status || '').toLowerCase() === 'up' ? '2px solid #22c55e' :
+            (service.last_status || '').toLowerCase() === 'down' ? '2px solid #ef4444' :
+              '2px solid #f59e0b'
+        }}
+      >
+        <div className="service-header">
+          <h3>{service.name}</h3>
+          <span className={`status-badge ${service.last_status}`}>
+            {service.last_status}
+          </span>
+        </div>
+
+        <div className="service-details">
+          <p><strong>ID:</strong> {service.id}</p>
+          <p><strong>Address:</strong> {service.ip_address}:{service.port}</p>
+          <p><strong>Protocol:</strong> {service.protocol}</p>
+          <p><strong>Check Interval:</strong> {service.check_interval_sec}s</p>
+          <p><strong>Success/Failure:</strong> {service.success_count}/{service.failure_count}</p>
+          {service.updated_at && (
+            <p><strong>Last Checked:</strong> {new Date(service.updated_at).toLocaleString()}</p>
+          )}
+          <p><strong>Type:</strong> {service.type || 'Other'}</p>
+        </div>
+
+        <div className="service-actions">
+          {service.protocol !== 'external' && (
+            <button
+              onClick={(event) => handleMonitorSingle(event, service.id)}
+              className="btn btn-small"
+            >
+              Test Now
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const handleToggleSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);
+  };
+
+  const toggleGroup = (groupLabel) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupLabel)) {
+        newSet.delete(groupLabel);
+      } else {
+        newSet.add(groupLabel);
+      }
+      return newSet;
+    });
   };
 
   return (
@@ -168,138 +300,245 @@ function Dashboard() {
             <>
               {/* Service Summary Cards */}
               <div className="summary-cards">
-                <div className="summary-card success">
-                  <div className="summary-icon"><Icon path={mdiCheckboxMarkedCircleAutoOutline} size={2} color="#22c55e" /></div>
-                  <div className="summary-content">
-                    <div className="summary-number">
-                      {(services || []).filter(s => s.last_status === 'up').length}
-                    </div>
-                    <div className="summary-label">Services Up</div>
-                  </div>
-                </div>
+                {(() => {
+                   // Calculate stats per type
+                   const statsByType = {};
+                   (services || []).forEach(service => {
+                      const type = service.type || 'Other';
+                      // Normalize type for aggregation if needed, but keeping it simple for now
+                      // We might want to map 'server_cloud' to 'Server Cloud' here or later
+                      
+                      let normalizedType = type;
+                      if (type === 'server_cloud') normalizedType = 'Server Cloud';
 
-                <div className="summary-card error">
-                  <div className="summary-icon"><Icon path={mdiCloseCircleOutline} color="#ef4444" size={2} /></div>
-                  <div className="summary-content">
-                    <div className="summary-number">
-                      {(services || []).filter(s => s.last_status === 'down').length}
-                    </div>
-                    <div className="summary-label">Services Down</div>
-                  </div>
-                </div>
+                      if (!statsByType[normalizedType]) {
+                         statsByType[normalizedType] = { total: 0, up: 0 };
+                      }
+                      statsByType[normalizedType].total += 1;
+                      if ((service.last_status || '').toLowerCase() === 'up') {
+                         statsByType[normalizedType].up += 1;
+                      }
+                   });
 
-                <div className="summary-card warning">
-                  <div className="summary-icon"><Icon path={mdiChartBellCurveCumulative} color="#f59e0b" size={1} /></div>
-                  <div className="summary-content">
-                    <div className="summary-number">
-                      {(services || []).length > 0 ? (
-                        (services || []).reduce((acc, service) => {
-                          const total = service.success_count + service.failure_count;
-                          return acc + (total > 0 ? (service.success_count / total) * 100 : 0);
-                        }, 0) / (services || []).length
-                      ).toFixed(1) : 0}%
-                    </div>
-                    <div className="summary-label">Avg Uptime</div>
-                  </div>
-                </div>
+                   const typeLabels = {
+                      'servers': 'Servers',
+                      'datasets': 'Datasets',
+                      'ocean-plotters': 'Ocean Plotters',
+                      'models': 'Models',
+                      'server_cloud': 'Server Cloud',
+                      'Server Cloud': 'Server Cloud'
+                   };
+
+                   return Object.entries(statsByType).map(([type, stats]) => {
+                      const label = typeLabels[type] || type;
+                      const isAllUp = stats.up === stats.total;
+                      const isNoneUp = stats.up === 0;
+                      
+                      let statusClass = 'warning';
+                      let icon = mdiChartBellCurveCumulative;
+                      let color = '#f59e0b';
+
+                      if (isAllUp) {
+                        statusClass = 'success';
+                        icon = mdiCheckboxMarkedCircleAutoOutline;
+                        color = '#22c55e';
+                      } else if (isNoneUp) {
+                        statusClass = 'error';
+                        icon = mdiCloseCircleOutline;
+                        color = '#ef4444';
+                      }
+
+                      return (
+                        <div key={type} className={`summary-card ${statusClass}`}>
+                          <div className="summary-icon">
+                            <Icon path={icon} size={1.5} color={color} />
+                          </div>
+                          <div className="summary-content">
+                            <div className="summary-number">
+                              {stats.up}/{stats.total}
+                            </div>
+                            <div className="summary-label">{label} Up</div>
+                          </div>
+                        </div>
+                      );
+                   });
+                })()}
               </div>
 
               {/* Remove the inline EventLogPanel from here since it's now a sidebar */}
 
-              {/* Services Grid or Group View */}
+              {/* Services Grid */}
               <div className="services-section">
-                <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h2 className="section-title">
-                    {selectedType ? `Type: ${selectedType} Services` : 'Service Details'}
-                  </h2>
-                  {selectedType && (
-                    <button onClick={() => setSelectedType(null)} className="btn btn-secondary">
-                      ← Back to Groups
-                    </button>
-                  )}
+                <div className="section-header">
+                  <h2 className="section-title">Service Details</h2>
                 </div>
 
-                {groupByType && !selectedType ? (
-                  /* Grouped View */
-                  <div className="type-summary-grid">
-                    {[...new Set(services.map(s => s.type || 'Other'))].sort().map(type => {
-                      const typeServices = services.filter(s => (s.type || 'Other') === type);
-                      const upCount = typeServices.filter(s => s.last_status && s.last_status.toLowerCase() === 'up').length;
-                      const downCount = typeServices.filter(s => s.last_status && s.last_status.toLowerCase() === 'down').length;
-                      const totalCount = typeServices.length;
+                <div className="services-grid">
+                  {(() => {
+                    // Grouping Logic
+                    const renderedItems = [];
 
-                      return (
-                        <div
-                          key={type}
-                          className="type-summary-card"
-                          onClick={() => setSelectedType(type)}
-                        >
-                          <h3>{type.charAt(0).toUpperCase() + type.slice(1)}</h3>
-                          <div className="type-stats">
-                            <div className={`stat-row ${downCount > 0 ? 'has-issues' : 'all-good'}`}>
-                              <strong>{upCount}/{totalCount}</strong> Up
+                    if (groupingPreferences.grouping_mode === 'collection') {
+                      // Group by Collection
+                      const servicesByCollection = {};
+                      (services || []).forEach(service => {
+                        const collection = service.collection || 'Uncategorized';
+                        if (!servicesByCollection[collection]) {
+                          servicesByCollection[collection] = [];
+                        }
+                        servicesByCollection[collection].push(service);
+                      });
+
+                      Object.entries(servicesByCollection).forEach(([collectionName, collectionServices]) => {
+                        // If expanded, render individual cards
+                        if (expandedGroups.has(collectionName)) {
+                           renderedItems.push(
+                             <div key={`group-header-${collectionName}`} className="service-card group-card expanded-header" onClick={() => toggleGroup(collectionName)} style={{ minHeight: 'auto', cursor: 'pointer', border: '2px dashed var(--btn-primary)' }}>
+                               <div className="group-card-header" style={{ borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                 <h3>{collectionName} (Expanded)</h3>
+                                 <span className="btn btn-small btn-secondary">Collapse</span>
+                               </div>
+                             </div>
+                           );
+                           collectionServices.forEach(service => {
+                             renderedItems.push(renderServiceCard(service));
+                           });
+                           return;
+                        }
+
+                        const total = collectionServices.length;
+                        const up = collectionServices.filter(s => (s.last_status || '').toLowerCase() === 'up').length;
+                        const down = collectionServices.filter(s => (s.last_status || '').toLowerCase() === 'down').length;
+                        const unknown = collectionServices.filter(s => (s.last_status || '').toLowerCase() === 'unknown' || !s.last_status).length;
+
+                        renderedItems.push(
+                          <div key={`group-${collectionName}`} className="service-card group-card">
+                            <div className="group-card-header">
+                              <h3>{collectionName}</h3>
                             </div>
-                            {downCount > 0 && (
-                              <div className="stat-row error">
-                                <strong>{downCount}</strong> Down
+                            <div className="group-card-stats">
+                              <div className="group-stat-row up">
+                                <span className="stat-count">{up}/{total}</span>
+                                <span className="stat-label">Up</span>
                               </div>
-                            )}
-                            {(totalCount - upCount - downCount) > 0 && (
-                              <div className="stat-row warning" style={{ marginTop: '0.5rem', fontSize: '0.9em', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#d97706' }}>
-                                <strong>{totalCount - upCount - downCount}</strong> Unknown
+                              <div className="group-stat-row down">
+                                <span className="stat-count">{down}</span>
+                                <span className="stat-label">Down</span>
                               </div>
-                            )}
+                              {unknown > 0 && (
+                                <div className="group-stat-row unknown">
+                                  <span className="stat-count">{unknown}</span>
+                                  <span className="stat-label">Unknown</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="group-card-footer" onClick={() => toggleGroup(collectionName)}>
+                              Click for more information
+                            </div>
                           </div>
-                          <div className="click-hint">Click for more information</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  /* Regular Grid View (filtered if selectedType is set) */
-                  <div className="services-grid">
-                    {(services || [])
-                      .filter(service => !selectedType || (service.type || 'Other') === selectedType)
-                      .map((service) => (
-                        <div
-                          key={service.id}
-                          className="service-card"
-                          onClick={() => handleCardClick(service)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <div className="service-header">
-                            <h3>{service.name}</h3>
-                            <span className={`status-badge ${service.last_status}`}>
-                              {service.last_status}
-                            </span>
-                          </div>
+                        );
+                      });
 
-                          <div className="service-details">
-                            <p><strong>ID:</strong> {service.id}</p>
-                            <p><strong>Address:</strong> {service.ip_address}:{service.port}</p>
-                            <p><strong>Protocol:</strong> {service.protocol}</p>
-                            <p><strong>Check Interval:</strong> {service.check_interval_sec}s</p>
-                            <p><strong>Success/Failure:</strong> {service.success_count}/{service.failure_count}</p>
-                            {service.updated_at && (
-                              <p><strong>Last Checked:</strong> {new Date(service.updated_at).toLocaleString()}</p>
-                            )}
-                            <p><strong>Type:</strong> {service.type || 'Other'}</p>
-                          </div>
+                    } else {
+                      // Default: Group by Service Type (Existing Logic)
+                      const groupedTypes = [];
+                      if (groupingPreferences.group_by_servers) groupedTypes.push('servers');
+                      if (groupingPreferences.group_by_datasets) groupedTypes.push('datasets');
+                      if (groupingPreferences.group_by_ocean_plotters) groupedTypes.push('ocean-plotters');
+                      if (groupingPreferences.group_by_models) groupedTypes.push('models');
+                      if (groupingPreferences.group_by_server_cloud) {
+                        groupedTypes.push('server_cloud');
+                        groupedTypes.push('Server Cloud');
+                      }
 
-                          <div className="service-actions">
-                            {service.protocol !== 'external' && (
-                              <button
-                                onClick={(event) => handleMonitorSingle(event, service.id)}
-                                className="btn btn-small"
-                              >
-                                Test Now
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
+                      const groupedServices = services.filter(s => groupedTypes.includes(s.type || 'Other'));
+                      const ungroupedServices = services.filter(s => !groupedTypes.includes(s.type || 'Other'));
+
+                      const typeLabels = {
+                        'servers': 'Servers',
+                        'datasets': 'Datasets',
+                        'ocean-plotters': 'Ocean-plotters',
+                        'models': 'Models',
+                        'server_cloud': 'Server Cloud',
+                        'Server Cloud': 'Server Cloud'
+                      };
+
+                      // Render Group Cards
+                      const renderedLabels = new Set();
+
+                      groupedTypes.forEach(type => {
+                        const label = typeLabels[type] || type;
+                        if (renderedLabels.has(label)) return;
+
+                        let typeServices;
+                        if (label === 'Server Cloud') {
+                           typeServices = groupedServices.filter(s => (s.type === 'server_cloud' || s.type === 'Server Cloud'));
+                        } else {
+                           typeServices = groupedServices.filter(s => (s.type || 'Other') === type);
+                        }
+
+                        if (typeServices.length > 0) {
+                          renderedLabels.add(label);
+
+                          // If expanded, render individual cards
+                          if (expandedGroups.has(label)) {
+                             renderedItems.push(
+                               <div key={`group-header-${label}`} className="service-card group-card expanded-header" onClick={() => toggleGroup(label)} style={{ minHeight: 'auto', cursor: 'pointer', border: '2px dashed var(--btn-primary)' }}>
+                                 <div className="group-card-header" style={{ borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                   <h3>{label} (Expanded)</h3>
+                                   <span className="btn btn-small btn-secondary">Collapse</span>
+                                 </div>
+                               </div>
+                             );
+                             typeServices.forEach(service => {
+                               renderedItems.push(renderServiceCard(service));
+                             });
+                             return;
+                          }
+
+                          const total = typeServices.length;
+                          const up = typeServices.filter(s => (s.last_status || '').toLowerCase() === 'up').length;
+                          const down = typeServices.filter(s => (s.last_status || '').toLowerCase() === 'down').length;
+                          const unknown = typeServices.filter(s => (s.last_status || '').toLowerCase() === 'unknown' || !s.last_status).length;
+
+                          renderedItems.push(
+                            <div key={`group-${label}`} className="service-card group-card">
+                              <div className="group-card-header">
+                                <h3>{label}</h3>
+                              </div>
+                              <div className="group-card-stats">
+                                <div className="group-stat-row up">
+                                  <span className="stat-count">{up}/{total}</span>
+                                  <span className="stat-label">Up</span>
+                                </div>
+                                <div className="group-stat-row down">
+                                  <span className="stat-count">{down}</span>
+                                  <span className="stat-label">Down</span>
+                                </div>
+                                {unknown > 0 && (
+                                  <div className="group-stat-row unknown">
+                                    <span className="stat-count">{unknown}</span>
+                                    <span className="stat-label">Unknown</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="group-card-footer" onClick={() => toggleGroup(label)}>
+                                Click for more information
+                              </div>
+                            </div>
+                          );
+                        }
+                      });
+
+                      // Render Ungrouped Services
+                      ungroupedServices.forEach(service => {
+                        renderedItems.push(renderServiceCard(service));
+                      });
+                    }
+
+                    return renderedItems;
+                  })()}
+                </div>
               </div>
 
             </>

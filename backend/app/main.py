@@ -35,6 +35,12 @@ templates = Jinja2Templates(directory="app/templates")
 
 app.include_router(endpoints.router, prefix="/service")
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database schema on application startup"""
+    from app.models import DatabaseSchema
+    DatabaseSchema.initialize_database()
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Close database connection pool on application shutdown"""
