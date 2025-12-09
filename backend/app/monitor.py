@@ -6,7 +6,11 @@ import time
 import requests
 import json
 import re
+import urllib3
 from datetime import datetime, timedelta
+
+# Disable SSL warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RETRIES = 3
 RETRY_DELAY = 1  # seconds between retries
@@ -317,11 +321,105 @@ def check_daily_status_exact(last_start_date):
     except ValueError:
         return 'unknown', f"Invalid date format: {last_start_date}"
 
+def get_cloud_token():
+    """Get the cloud monitoring token from the database"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT configuration FROM dashboard_configs WHERE name = 'cloud-monitoring.corp.spc.int'")
+                result = cur.fetchone()
+                if result:
+                    return result[0]
+    except Exception as e:
+        print(f"Error getting cloud token: {e}")
+    return None
+
+def check_cloud_service(service: dict) -> dict:
+    """Check a Server Cloud service"""
+    service_id = service["id"]
+    service_name = service["name"]
+    
+    token = get_cloud_token()
+    if not token:
+        status = "unknown"
+        message = "No cloud token found in database"
+        log_monitoring_result(service_id, status, message, "Cloud API Check")
+        update_service_status(service_id, status)
+        return {"service_id": service_id, "status": status, "output": message}
+
+    url = "https://cloud-monitoring.corp.spc.int/api/collections/systems/records"
+    params = {
+        "page": 1,
+        "perPage": 1,
+        "filter": f"name='{service_name}'"
+    }
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+
+    try:
+        response = requests.get(url, params=params, headers=headers, verify=False, timeout=10)
+        
+        if response.status_code != 200:
+            status = "unknown"
+            message = f"API Error: {response.status_code} - {response.text}"
+            log_monitoring_result(service_id, status, message, f"GET {url}")
+            update_service_status(service_id, status)
+            return {"service_id": service_id, "status": status, "output": message}
+
+        data = response.json()
+        items = data.get("items", [])
+        
+        if not items:
+            status = "unknown"
+            message = f"Service '{service_name}' not found in cloud monitoring"
+            log_monitoring_result(service_id, status, message, f"GET {url}")
+            update_service_status(service_id, status)
+            return {"service_id": service_id, "status": status, "output": message}
+
+        item = items[0]
+        status = item.get("status", "unknown")
+        updated_at_str = item.get("updated")
+        
+        message = f"Cloud status: {status}, Last updated: {updated_at_str}"
+        
+        # Log the result
+        log_monitoring_result(service_id, status, message, f"GET {url}")
+        
+        # Update service status and updated_at time
+        success = status == "up"
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE monitored_services
+                    SET
+                        last_status = %s,
+                        success_count = success_count + %s,
+                        failure_count = failure_count + %s,
+                        updated_at = %s
+                    WHERE id = %s
+                """, (status, 1 if success else 0, 0 if success else 1, updated_at_str, service_id))
+                conn.commit()
+                
+        return {"service_id": service_id, "status": status, "output": message}
+
+    except Exception as e:
+        status = "unknown"
+        message = f"Exception: {str(e)}"
+        log_monitoring_result(service_id, status, message, f"GET {url}")
+        update_service_status(service_id, status)
+        return {"service_id": service_id, "status": status, "output": message}
+
 def check_service(service: dict) -> dict:
     protocol = service["protocol"]
     ip = service["ip_address"]
     port = service["port"]
     service_id = service["id"]
+
+    # Check for Server Cloud type
+    service_type = service.get("type")
+    if service_type == "Server Cloud":
+        return check_cloud_service(service)
 
     # Check if this is an ocean middleware service
     if "ocean-middleware.spc.int/middleware/api/" in ip:

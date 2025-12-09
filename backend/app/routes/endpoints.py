@@ -7,9 +7,16 @@ from app.auth import verify_api_key
 from app.db import get_connection, get_connection_pool  # Using connection pool
 import psycopg2.extras
 import subprocess
+import requests
 from datetime import datetime
-created_at: datetime
-updated_at: datetime
+from typing import Dict, Any
+import requests
+import json
+import urllib3
+# Disable SSL warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# created_at: datetime  -- removing stray type hints if they cause issues, but keeping original structure mostly
+
 
 
 router = APIRouter()
@@ -35,6 +42,7 @@ class ServiceBase(BaseModel):
     comment: Optional[str] = None
     display_order: Optional[int] = Field(default=None, ge=0)
     type: Optional[str] = Field(default='servers')
+    collection: Optional[str] = Field(default='uncategorized')
 
 class ServiceCreate(ServiceBase):
     pass
@@ -52,6 +60,7 @@ class ServiceUpdate(BaseModel):
     is_active: Optional[bool] = Field(default=None)
     display_order: Optional[int] = Field(default=None, ge=0)
     type: Optional[str] = Field(default=None)
+    collection: Optional[str] = Field(default=None)
 
 class ServiceOut(BaseModel):
     id: int
@@ -75,6 +84,7 @@ class ServiceOut(BaseModel):
     checked_at: Optional[datetime] = None  # Add default None
     display_order: Optional[int] = None
     type: Optional[str] = None
+    collection: Optional[str] = None
 
 
 
@@ -133,6 +143,63 @@ class CronStatusOut(BaseModel):
     active_jobs: int
     last_updated: str
     error: Optional[str] = None
+
+class GroupingPreferences(BaseModel):
+    grouping_mode: str = 'type'
+    group_by_servers: bool = False
+    group_by_datasets: bool = False
+    group_by_ocean_plotters: bool = False
+    group_by_models: bool = False
+    group_by_server_cloud: bool = False
+
+@router.get("/grouping-preferences")
+def get_grouping_preferences(api_key: str = Depends(verify_api_key)):
+    """Get dashboard grouping preferences"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT configuration FROM dashboard_configs WHERE name = 'grouping_preferences'")
+                result = cur.fetchone()
+                if result:
+                    prefs = json.loads(result[0])
+                    # Ensure grouping_mode exists for backward compatibility
+                    if 'grouping_mode' not in prefs:
+                        prefs['grouping_mode'] = 'type'
+                    return prefs
+                else:
+                    # Return defaults
+                    return {
+                        "grouping_mode": "type",
+                        "group_by_servers": False,
+                        "group_by_datasets": False,
+                        "group_by_ocean_plotters": False,
+                        "group_by_models": False,
+                        "group_by_server_cloud": False
+                    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/grouping-preferences")
+def update_grouping_preferences(prefs: GroupingPreferences, api_key: str = Depends(verify_api_key)):
+    """Update dashboard grouping preferences"""
+    try:
+        print(f"Updating grouping preferences: {prefs}")
+        prefs_json = json.dumps(prefs.dict())
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Upsert
+                cur.execute("""
+                    INSERT INTO dashboard_configs (name, configuration) 
+                    VALUES ('grouping_preferences', %s)
+                    ON CONFLICT (name) 
+                    DO UPDATE SET configuration = EXCLUDED.configuration
+                """, (prefs_json,))
+                conn.commit()
+        print("Grouping preferences updated successfully")
+        return {"status": "success", "preferences": prefs}
+    except Exception as e:
+        print(f"Error updating grouping preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/status", summary="Check service health", dependencies=[Depends(verify_api_key)])
 def get_status():
@@ -271,14 +338,15 @@ def insert_service(service: ServiceCreate):
                     INSERT INTO monitored_services (
                         name, ip_address, port, protocol, check_interval_sec, 
                         interval_type, interval_value, interval_unit, comment,
-                        display_order, type
+                        display_order, type, collection
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     service.name, str(service.ip_address), service.port, service.protocol, 
                     service.check_interval_sec, service.interval_type, service.interval_value, 
-                    service.interval_unit, service.comment, display_order_value, service.type
+                    service.interval_unit, service.comment, display_order_value, service.type,
+                    service.collection
                 ))
                 result = cur.fetchone()
                 service_id = result[0] if result else None
@@ -553,3 +621,160 @@ def reload_cronjobs():
                 return {"message": "Cron jobs reloaded successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reloading cron jobs: {str(e)}")
+
+
+CLOUD_BASE_URL = "https://cloud-monitoring.corp.spc.int"
+CLOUD_CONFIG_NAME = "cloud-monitoring.corp.spc.int"
+
+def get_stored_token():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT configuration FROM dashboard_configs WHERE name = %s", (CLOUD_CONFIG_NAME,))
+                result = cur.fetchone()
+                if result:
+                    return result[0]
+    except Exception as e:
+        print(f"Error getting stored token: {e}")
+    return None
+
+def authenticate_and_store_token():
+    auth_url = f"{CLOUD_BASE_URL}/api/collections/users/auth-with-password"
+    auth_payload = {
+        "identity": "divesha@spc.int",
+        "password": "Un2345678"
+    }
+    headers = {'Content-Type': 'application/json'}
+    
+    print(f"Authenticating to {auth_url}...")
+    try:
+        response = requests.post(auth_url, headers=headers, json=auth_payload, verify=False)
+        response.raise_for_status()
+        
+        auth_data = response.json()
+        token = auth_data.get("token")
+        
+        if not token:
+            raise Exception("Failed to retrieve token from authentication response")
+            
+        # Store in DB
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Check if exists
+                cur.execute("SELECT id FROM dashboard_configs WHERE name = %s", (CLOUD_CONFIG_NAME,))
+                if cur.fetchone():
+                    cur.execute("UPDATE dashboard_configs SET configuration = %s WHERE name = %s", (token, CLOUD_CONFIG_NAME))
+                else:
+                    cur.execute("INSERT INTO dashboard_configs (name, configuration) VALUES (%s, %s)", (CLOUD_CONFIG_NAME, token))
+                conn.commit()
+        
+        return token
+        
+    except Exception as e:
+        print(f"Authentication failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+
+@router.post("/cloud/sync", dependencies=[Depends(verify_api_key)])
+def sync_cloud():
+    token = get_stored_token()
+    
+    if not token:
+        print("No token found in DB, authenticating...")
+        token = authenticate_and_store_token()
+    
+    systems_url = f"{CLOUD_BASE_URL}/api/collections/systems/records"
+    
+    def fetch_systems(auth_token):
+        headers = {
+            'Authorization': f'Bearer {auth_token}',
+            'Content-Type': 'application/json'
+        }
+        print(f"Fetching systems from {systems_url}...")
+        return requests.get(systems_url, headers=headers, verify=False)
+
+    try:
+        response = fetch_systems(token)
+        
+        # Check if request failed or returned empty items as per user requirement
+        should_refresh = False
+        if response.status_code != 200:
+            should_refresh = True
+            print(f"Request failed with status {response.status_code}")
+        else:
+            try:
+                data = response.json()
+                if "items" in data and len(data["items"]) == 0:
+                    should_refresh = True
+                    print("Response contained 0 items, assuming token issue...")
+            except ValueError:
+                should_refresh = True
+                print("Invalid JSON response")
+        
+        if should_refresh:
+            print("Refreshing token and retrying...")
+            token = authenticate_and_store_token()
+            response = fetch_systems(token)
+            response.raise_for_status()
+            data = response.json()
+
+        # Sync items to database
+        if "items" in data:
+            try:
+                print(f"Syncing {len(data['items'])} items to database...")
+                with get_connection() as conn:
+                    with conn.cursor() as cur:
+                        for item in data["items"]:
+                            name = item.get('name')
+                            if not name:
+                                continue
+
+                            ip_address = item.get('host', '')
+                            try:
+                                port = int(item.get('port')) if item.get('port') else None
+                            except (ValueError, TypeError):
+                                port = None
+
+                            status_val = item.get('status', 'unknown')
+                            updated_str = item.get('updated')
+                            created_str = item.get('created')
+
+                            # Check if service exists
+                            cur.execute("SELECT id FROM monitored_services WHERE name = %s", (name,))
+                            existing = cur.fetchone()
+
+                            if existing:
+                                # Update existing service
+                                cur.execute("""
+                                    UPDATE monitored_services 
+                                    SET ip_address = %s,
+                                        port = %s,
+                                        last_status = %s,
+                                        updated_at = %s,
+                                        type = 'Server Cloud'
+                                    WHERE id = %s
+                                """, (ip_address, port, status_val, updated_str, existing[0]))
+                            else:
+                                # Insert new service
+                                cur.execute("""
+                                    INSERT INTO monitored_services (
+                                        name, ip_address, port, protocol, 
+                                        check_interval_sec, interval_type, interval_value, interval_unit,
+                                        last_status, created_at, updated_at, is_active, type
+                                    ) VALUES (
+                                        %s, %s, %s, 'api',
+                                        300, 'minutes', 5, 'minutes',
+                                        %s, %s, %s, true, 'Server Cloud'
+                                    )
+                                """, (name, ip_address, port, status_val, created_str, updated_str))
+                        
+                        conn.commit()
+                        print("Database sync complete.")
+            except Exception as e:
+                print(f"Error syncing to database: {e}")
+                # Continue to return data even if DB sync fails
+            
+        return data
+        
+    except Exception as e:
+        print(f"Sync failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")

@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Admin from './pages/Admin';
 import Dashboard from './pages/Dashboard'; // your moved code
 import ServiceDetail from './pages/ServiceDetail'; // New detail page
+import './group-card.css';
 
 
 import { Link } from 'react-router-dom';

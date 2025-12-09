@@ -2409,3 +2409,91 @@ input.error {
   margin-top: auto;
   font-style: italic;
 }
+
+/* System Monitor Styles */
+.system-metric {
+  margin-bottom: 0.5rem;
+}
+
+.system-metric-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+  color: var(--text-secondary);
+}
+
+.system-progress-container {
+  height: 6px;
+  background-color: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.system-progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-low {
+  background-color: #22c55e; /* Green */
+}
+
+.progress-med {
+  background-color: #f59e0b; /* Orange */
+}
+
+.progress-high {
+  background-color: #ef4444; /* Red */
+}
+
+.system-info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+}
+
+.system-label {
+  color: var(--text-secondary);
+}
+
+.system-value {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.system-meta {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Grouped View Styles */
+.grouped-services-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.service-group-section {
+  background-color: var(--bg-secondary);
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-color);
+}
+
+.group-header {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 1.5rem;
+}
+

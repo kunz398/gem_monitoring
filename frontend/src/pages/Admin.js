@@ -18,7 +18,14 @@ function Admin() {
   const [showCodeSnippet, setShowCodeSnippet] = useState(false);
   const [createdServiceId, setCreatedServiceId] = useState(null);
   const [activeTab, setActiveTab] = useState('registration'); // 'registration', 'dashboard'
-  const [isGroupMode, setIsGroupMode] = useState(localStorage.getItem('gem_dashboard_group_by_type') === 'true');
+  const [groupingPreferences, setGroupingPreferences] = useState({
+    grouping_mode: 'type',
+    group_by_servers: false,
+    group_by_datasets: false,
+    group_by_ocean_plotters: false,
+    group_by_models: false,
+    group_by_server_cloud: false
+  });
 
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -31,22 +38,24 @@ function Admin() {
     name: '',
     ip_address: '',
     port: '',
-    protocol: 'http',
+    protocol: '',
     interval_type: 'seconds',
     interval_value: 60,
     interval_unit: 'seconds',
     comment: '',
     check_interval_sec: 60,
     display_order: '',
-    type: 'servers'
+    type: '',
+    collection: 'uncategorized'
   });
 
-  const protocols = ['http', 'https', 'tcp', 'ping', 'curl', 'heartbeat', 'external'];
+  const protocols = ['http', 'https', 'tcp', 'ping', 'curl', 'heartbeat', 'external', 'api'];
   const serviceTypes = [
     { value: 'servers', label: 'Servers' },
     { value: 'datasets', label: 'Datasets' },
     { value: 'ocean-plotters', label: 'Ocean Plotters' },
-    { value: 'models', label: 'Models' }
+    { value: 'models', label: 'Models' },
+    { value: 'server_cloud', label: 'Server Cloud', disabled: true }
   ];
   const intervalTypes = [
     { value: 'seconds', label: 'Seconds' },
@@ -76,6 +85,34 @@ function Admin() {
     }
   }, []);
 
+  useEffect(() => {
+    if (isAuthenticated && activeTab === 'dashboard') {
+      fetchGroupingPreferences();
+    }
+  }, [isAuthenticated, activeTab]);
+
+  const fetchGroupingPreferences = async () => {
+    try {
+      const prefs = await servicesApi.getGroupingPreferences();
+      if (prefs) {
+        setGroupingPreferences(prefs);
+      }
+    } catch (err) {
+      console.error('Failed to fetch grouping preferences:', err);
+    }
+  };
+
+  const handleGroupingChange = async (key, value) => {
+    const newPrefs = { ...groupingPreferences, [key]: value };
+    setGroupingPreferences(newPrefs);
+    try {
+      await servicesApi.updateGroupingPreferences(newPrefs);
+    } catch (err) {
+      console.error('Failed to update grouping preferences:', err);
+      // Revert on error
+      setGroupingPreferences(groupingPreferences);
+    }
+  };
 
   const validateApiKey = async (key) => {
     try {
@@ -109,14 +146,14 @@ function Admin() {
       name: '',
       ip_address: '',
       port: '',
-      protocol: 'http',
+      protocol: '',
       interval_type: 'seconds',
       interval_value: 60,
       interval_unit: 'seconds',
       comment: '',
       check_interval_sec: 60,
       display_order: '',
-      type: 'servers'
+      type: ''
     });
     setSelectedService(null);
     setShowForm(false);
@@ -271,6 +308,27 @@ function Admin() {
   };
 
 
+  const handleSyncCloud = async () => {
+    setLoading(true);
+    try {
+      // Call backend to handle cloud sync (auth + fetch + db update)
+      const result = await servicesApi.syncCloud();
+      
+      if (result && result.items) {
+        const count = result.items.length;
+        alert(`Cloud Sync Complete: Processed ${count} systems from cloud.`);
+      } else {
+        alert('Cloud Sync completed.');
+      }
+      await fetchServices();
+    } catch (err) {
+      console.error('Cloud sync error:', err);
+      alert(`Sync failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreate = () => {
     setFormMode('create');
     resetForm();
@@ -291,7 +349,8 @@ function Admin() {
       comment: service.comment || '',
       check_interval_sec: service.check_interval_sec || 60,
       display_order: typeof service.display_order === 'number' ? service.display_order : '',
-      type: service.type || 'servers'
+      type: service.type || 'servers',
+      collection: service.collection || 'uncategorized'
     });
     setShowForm(true);
   };
@@ -312,7 +371,8 @@ function Admin() {
         comment: service.comment || '',
         check_interval_sec: service.check_interval_sec || 60,
         display_order: typeof service.display_order === 'number' ? service.display_order : '',
-        type: service.type || 'servers'
+        type: service.type || 'servers',
+        collection: service.collection || 'uncategorized'
       });
       setShowForm(true);
     } catch (err) {
@@ -628,6 +688,15 @@ function Admin() {
               >
                 {loading ? 'Loading...' : 'Refresh Services'}
               </button>
+              <button
+                onClick={handleSyncCloud}
+                disabled={loading}
+                className="btn btn-info"
+                style={{ marginLeft: '10px', backgroundColor: '#17a2b8', color: 'white' }}
+                title="Fetch services from Cloud Monitoring"
+              >
+                ☁️ Sync Cloud
+              </button>
               {/* <button 
             onClick={() => setShowHelp(!showHelp)} 
             className="btn btn-help"
@@ -800,13 +869,28 @@ function Admin() {
                           value={formData.type}
                           onChange={handleInputChange}
                           disabled={formMode === 'view'}
+                          required
                         >
+                          <option value="" disabled>Select Service Type</option>
                           {serviceTypes.map(type => (
-                            <option key={type.value} value={type.value}>
+                            <option key={type.value} value={type.value} disabled={type.disabled}>
                               {type.label}
                             </option>
                           ))}
                         </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor="collection">Collection</label>
+                        <input
+                          type="text"
+                          id="collection"
+                          name="collection"
+                          value={formData.collection}
+                          onChange={handleInputChange}
+                          disabled={formMode === 'view'}
+                          placeholder="e.g., uncategorized"
+                        />
                       </div>
 
                       <div className="form-group">
@@ -819,6 +903,7 @@ function Admin() {
                           required
                           disabled={formMode === 'view'}
                         >
+                          <option value="" disabled>Select Protocol</option>
                           {protocols.map(protocol => (
                             <option key={protocol} value={protocol}>
                               {protocol.toUpperCase()}
@@ -836,7 +921,7 @@ function Admin() {
                           value={formData.name}
                           onChange={handleInputChange}
                           required
-                          disabled={formMode === 'view'}
+                          disabled={formMode === 'view' || !formData.type || !formData.protocol}
                           placeholder="e.g., My Web Server"
                         />
                       </div>
@@ -850,7 +935,7 @@ function Admin() {
                           value={formData.ip_address}
                           onChange={handleInputChange}
                           required
-                          disabled={formMode === 'view'}
+                          disabled={formMode === 'view' || !formData.type || !formData.protocol}
                           placeholder="e.g., 192.168.1.10 or example.com"
                         />
                       </div>
@@ -867,7 +952,7 @@ function Admin() {
                             onChange={handleInputChange}
                             min="0"
                             max="65535"
-                            disabled={formMode === 'view'}
+                            disabled={formMode === 'view' || !formData.type || !formData.protocol}
                             placeholder="e.g., 80, 443, 8080"
                           />
                         </div>
@@ -882,7 +967,7 @@ function Admin() {
                             value={formData.interval_type}
                             onChange={handleInputChange}
                             required={formData.protocol !== 'external'}
-                            disabled={formMode === 'view'}
+                            disabled={formMode === 'view' || !formData.type || !formData.protocol}
                           >
                             {intervalTypes.map(type => (
                               <option key={type.value} value={type.value}>
@@ -905,7 +990,7 @@ function Admin() {
                             min="1"
                             max={formData.interval_type === 'specific_day' ? 31 : 999}
                             required={formData.protocol !== 'external'}
-                            disabled={formMode === 'view'}
+                            disabled={formMode === 'view' || !formData.type || !formData.protocol}
                             placeholder={formData.interval_type === 'specific_day' ? "1-31" : "e.g., 1, 5, 15"}
                           />
                         </div>
@@ -920,7 +1005,7 @@ function Admin() {
                             value={formData.interval_unit}
                             onChange={handleInputChange}
                             required={formData.protocol !== 'external'}
-                            disabled={formMode === 'view'}
+                            disabled={formMode === 'view' || !formData.type || !formData.protocol}
                           >
                             {intervalUnits.map(unit => (
                               <option key={unit.value} value={unit.value}>
@@ -940,7 +1025,7 @@ function Admin() {
                           value={formData.display_order}
                           onChange={handleInputChange}
                           min="0"
-                          disabled={formMode === 'view'}
+                          disabled={formMode === 'view' || !formData.type || !formData.protocol}
                           placeholder="0 = Show first"
                         />
                       </div>
@@ -974,7 +1059,7 @@ function Admin() {
                           value={formData.comment}
                           onChange={handleInputChange}
                           rows="3"
-                          disabled={formMode === 'view'}
+                          disabled={formMode === 'view' || !formData.type || !formData.protocol}
                           placeholder="Optional description or notes about this service"
                         />
                       </div>
@@ -985,6 +1070,7 @@ function Admin() {
                         <h3>Service Information</h3>
                         <div className="metadata-grid">
                           <p><strong>ID:</strong> {selectedService.id}</p>
+                          <p><strong>Collection:</strong> {selectedService.collection || 'uncategorized'}</p>
                           <p><strong>Status:</strong>
                             <span className={`status-badge ${selectedService.last_status}`}>
                               {selectedService.last_status}
@@ -1033,6 +1119,7 @@ function Admin() {
                       <th>ID</th>
                       <th>Order</th>
                       <th>Name</th>
+                      <th>Collection</th>
                       <th>Address</th>
                       <th>Protocol</th>
                       <th>Status</th>
@@ -1047,6 +1134,7 @@ function Admin() {
                         <td>{service.id}</td>
                         <td>{typeof service.display_order === 'number' ? service.display_order : '—'}</td>
                         <td>{service.name}</td>
+                        <td>{service.collection || 'uncategorized'}</td>
                         <td>{service.ip_address}:{service.port}</td>
                         <td>
                           <span className="protocol-badge">{service.protocol.toUpperCase()}</span>
@@ -1109,28 +1197,79 @@ function Admin() {
           <div className="dashboard-config-tab">
             <h2>Dashboard Configuration</h2>
             <div className="config-section">
-              <h3>View Settings</h3>
-              <div className="form-group">
-                <div className="toggle-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <label className="theme-switch">
+              <h3>Grouping Settings</h3>
+              <p className="help-text">
+                Choose how you want to group your services on the dashboard.
+              </p>
+
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>Grouping Mode:</label>
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                     <input
-                      type="checkbox"
-                      checked={isGroupMode}
-                      onChange={(e) => {
-                        setIsGroupMode(e.target.checked);
-                        localStorage.setItem('gem_dashboard_group_by_type', e.target.checked);
-                      }}
+                      type="radio"
+                      name="grouping_mode"
+                      value="type"
+                      checked={groupingPreferences.grouping_mode === 'type'}
+                      onChange={() => handleGroupingChange('grouping_mode', 'type')}
+                      style={{ marginRight: '8px' }}
                     />
-                    <span className="slider"></span>
+                    By Service Type
                   </label>
-                  <span className="toggle-label" style={{ fontWeight: 'bold', minWidth: '120px' }}>
-                    {isGroupMode ? 'Group Mode: ON' : 'Group Mode: OFF'}
-                  </span>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="grouping_mode"
+                      value="collection"
+                      checked={groupingPreferences.grouping_mode === 'collection'}
+                      onChange={() => handleGroupingChange('grouping_mode', 'collection')}
+                      style={{ marginRight: '8px' }}
+                    />
+                    By Collection
+                  </label>
                 </div>
-                <p className="help-text">
-                  When enabled, services on the dashboard will be grouped by their type (Servers, Datasets, etc.) instead of showing a flat list.
-                </p>
               </div>
+
+              {groupingPreferences.grouping_mode === 'type' && (
+                <>
+                  <p className="help-text">
+                    Enable grouping for specific service types. Services of enabled types will be grouped together into a single summary card.
+                  </p>
+                  <div className="grouping-toggles-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px', marginTop: '20px' }}>
+                    {serviceTypes.map((type) => {
+                      // Map service type value to preference key
+                      // servers -> group_by_servers
+                      // server_cloud -> group_by_server_cloud
+                      const prefKey = `group_by_${type.value.replace('-', '_')}`;
+                      
+                      return (
+                        <div key={type.value} className="form-group" style={{ marginBottom: 0 }}>
+                          <div className="toggle-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <label className="theme-switch">
+                              <input
+                                type="checkbox"
+                                checked={!!groupingPreferences[prefKey]}
+                                onChange={(e) => handleGroupingChange(prefKey, e.target.checked)}
+                              />
+                              <span className="slider"></span>
+                            </label>
+                            <span className="toggle-label">
+                              Group {type.label}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {groupingPreferences.grouping_mode === 'collection' && (
+                <div className="info-box" style={{ marginTop: '20px', padding: '15px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <p><strong>ℹ️ Collection Grouping Enabled</strong></p>
+                  <p>Services will be automatically grouped by their assigned "Collection" name. Services without a collection will appear in "Uncategorized".</p>
+                </div>
+              )}
             </div>
           </div>
         )}
