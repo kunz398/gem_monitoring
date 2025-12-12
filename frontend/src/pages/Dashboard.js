@@ -325,69 +325,70 @@ function Dashboard() {
               {/* Service Summary Cards */}
               <div className="summary-cards">
                 {(() => {
-                   const isCollectionMode = groupingPreferences.grouping_mode === 'collection';
-                   const stats = {};
+                  const isCollectionMode = groupingPreferences.grouping_mode === 'collection';
+                  const stats = {};
 
-                   (services || []).forEach(service => {
-                      let key;
-                      if (isCollectionMode) {
-                        key = service.collection || 'Uncategorized';
-                      } else {
-                        key = service.type || 'Other';
-                        if (key === 'server_cloud') key = 'Server Cloud';
-                      }
+                  (services || []).forEach(service => {
+                    let key;
+                    if (isCollectionMode) {
+                      key = service.collection || 'Uncategorized';
+                    } else {
+                      key = service.type || 'Other';
+                      if (key === 'server_cloud') key = 'Server Cloud';
+                    }
 
-                      if (!stats[key]) {
-                         stats[key] = { total: 0, up: 0 };
-                      }
-                      stats[key].total += 1;
-                      if ((service.last_status || '').toLowerCase() === 'up') {
-                         stats[key].up += 1;
-                      }
-                   });
+                    if (!stats[key]) {
+                      stats[key] = { total: 0, up: 0 };
+                    }
+                    stats[key].total += 1;
+                    if ((service.last_status || '').toLowerCase() === 'up') {
+                      stats[key].up += 1;
+                    }
+                  });
 
-                   const typeLabels = {
-                      'servers': 'Servers',
-                      'datasets': 'Datasets',
-                      'ocean-plotters': 'Ocean Plotters',
-                      'models': 'Models',
-                      'server_cloud': 'Server Cloud',
-                      'Server Cloud': 'Server Cloud'
-                   };
+                  const typeLabels = {
+                    'servers': 'Servers',
+                    'datasets': 'Datasets',
+                    'thredds': 'THREDDS',
+                    'ocean-plotters': 'Ocean Plotters',
+                    'models': 'Models',
+                    'server_cloud': 'Server Cloud',
+                    'Server Cloud': 'Server Cloud'
+                  };
 
-                   return Object.entries(stats).map(([key, stat]) => {
-                      const label = isCollectionMode ? key : (typeLabels[key] || key);
-                      const isAllUp = stat.up === stat.total;
-                      const isNoneUp = stat.up === 0;
-                      
-                      let statusClass = 'warning';
-                      let icon = mdiChartBellCurveCumulative;
-                      let color = '#f59e0b';
+                  return Object.entries(stats).map(([key, stat]) => {
+                    const label = isCollectionMode ? key : (typeLabels[key] || key);
+                    const isAllUp = stat.up === stat.total;
+                    const isNoneUp = stat.up === 0;
 
-                      if (isAllUp) {
-                        statusClass = 'success';
-                        icon = mdiCheckboxMarkedCircleAutoOutline;
-                        color = '#22c55e';
-                      } else if (isNoneUp) {
-                        statusClass = 'error';
-                        icon = mdiCloseCircleOutline;
-                        color = '#ef4444';
-                      }
+                    let statusClass = 'warning';
+                    let icon = mdiChartBellCurveCumulative;
+                    let color = '#f59e0b';
 
-                      return (
-                        <div key={key} className={`summary-card ${statusClass}`}>
-                          <div className="summary-icon">
-                            <Icon path={icon} size={1.5} color={color} />
-                          </div>
-                          <div className="summary-content">
-                            <div className="summary-number">
-                              {stat.up}/{stat.total}
-                            </div>
-                            <div className="summary-label">{label} Up</div>
-                          </div>
+                    if (isAllUp) {
+                      statusClass = 'success';
+                      icon = mdiCheckboxMarkedCircleAutoOutline;
+                      color = '#22c55e';
+                    } else if (isNoneUp) {
+                      statusClass = 'error';
+                      icon = mdiCloseCircleOutline;
+                      color = '#ef4444';
+                    }
+
+                    return (
+                      <div key={key} className={`summary-card ${statusClass}`}>
+                        <div className="summary-icon">
+                          <Icon path={icon} size={1.5} color={color} />
                         </div>
-                      );
-                   });
+                        <div className="summary-content">
+                          <div className="summary-number">
+                            {stat.up}/{stat.total}
+                          </div>
+                          <div className="summary-label">{label} Up</div>
+                        </div>
+                      </div>
+                    );
+                  });
                 })()}
               </div>
 
@@ -418,18 +419,18 @@ function Dashboard() {
                       Object.entries(servicesByCollection).forEach(([collectionName, collectionServices]) => {
                         // If expanded, render individual cards
                         if (expandedGroups.has(collectionName)) {
-                           renderedItems.push(
-                             <div key={`group-header-${collectionName}`} className="service-card group-card expanded-header" onClick={() => toggleGroup(collectionName)} style={{ minHeight: 'auto', cursor: 'pointer', border: '2px dashed var(--btn-primary)' }}>
-                               <div className="group-card-header" style={{ borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                 <h3>{collectionName} (Expanded)</h3>
-                                 <span className="btn btn-small btn-secondary">Collapse</span>
-                               </div>
-                             </div>
-                           );
-                           collectionServices.forEach(service => {
-                             renderedItems.push(renderServiceCard(service));
-                           });
-                           return;
+                          renderedItems.push(
+                            <div key={`group-header-${collectionName}`} className="service-card group-card expanded-header" onClick={() => toggleGroup(collectionName)} style={{ minHeight: 'auto', cursor: 'pointer', border: '2px dashed var(--btn-primary)' }}>
+                              <div className="group-card-header" style={{ borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3>{collectionName} (Expanded)</h3>
+                                <span className="btn btn-small btn-secondary">Collapse</span>
+                              </div>
+                            </div>
+                          );
+                          collectionServices.forEach(service => {
+                            renderedItems.push(renderServiceCard(service));
+                          });
+                          return;
                         }
 
                         const total = collectionServices.length;
@@ -470,6 +471,7 @@ function Dashboard() {
                       const groupedTypes = [];
                       if (groupingPreferences.group_by_servers) groupedTypes.push('servers');
                       if (groupingPreferences.group_by_datasets) groupedTypes.push('datasets');
+                      if (groupingPreferences.group_by_thredds) groupedTypes.push('thredds');
                       if (groupingPreferences.group_by_ocean_plotters) groupedTypes.push('ocean-plotters');
                       if (groupingPreferences.group_by_models) groupedTypes.push('models');
                       if (groupingPreferences.group_by_server_cloud) {
@@ -483,6 +485,7 @@ function Dashboard() {
                       const typeLabels = {
                         'servers': 'Servers',
                         'datasets': 'Datasets',
+                        'thredds': 'THREDDS',
                         'ocean-plotters': 'Ocean-plotters',
                         'models': 'Models',
                         'server_cloud': 'Server Cloud',
@@ -498,9 +501,9 @@ function Dashboard() {
 
                         let typeServices;
                         if (label === 'Server Cloud') {
-                           typeServices = groupedServices.filter(s => (s.type === 'server_cloud' || s.type === 'Server Cloud'));
+                          typeServices = groupedServices.filter(s => (s.type === 'server_cloud' || s.type === 'Server Cloud'));
                         } else {
-                           typeServices = groupedServices.filter(s => (s.type || 'Other') === type);
+                          typeServices = groupedServices.filter(s => (s.type || 'Other') === type);
                         }
 
                         if (typeServices.length > 0) {
@@ -508,18 +511,18 @@ function Dashboard() {
 
                           // If expanded, render individual cards
                           if (expandedGroups.has(label)) {
-                             renderedItems.push(
-                               <div key={`group-header-${label}`} className="service-card group-card expanded-header" onClick={() => toggleGroup(label)} style={{ minHeight: 'auto', cursor: 'pointer', border: '2px dashed var(--btn-primary)' }}>
-                                 <div className="group-card-header" style={{ borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                   <h3>{label} (Expanded)</h3>
-                                   <span className="btn btn-small btn-secondary">Collapse</span>
-                                 </div>
-                               </div>
-                             );
-                             typeServices.forEach(service => {
-                               renderedItems.push(renderServiceCard(service));
-                             });
-                             return;
+                            renderedItems.push(
+                              <div key={`group-header-${label}`} className="service-card group-card expanded-header" onClick={() => toggleGroup(label)} style={{ minHeight: 'auto', cursor: 'pointer', border: '2px dashed var(--btn-primary)' }}>
+                                <div className="group-card-header" style={{ borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <h3>{label} (Expanded)</h3>
+                                  <span className="btn btn-small btn-secondary">Collapse</span>
+                                </div>
+                              </div>
+                            );
+                            typeServices.forEach(service => {
+                              renderedItems.push(renderServiceCard(service));
+                            });
+                            return;
                           }
 
                           const total = typeServices.length;

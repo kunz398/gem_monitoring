@@ -148,6 +148,7 @@ class GroupingPreferences(BaseModel):
     grouping_mode: str = 'type'
     group_by_servers: bool = False
     group_by_datasets: bool = False
+    group_by_thredds: bool = False
     group_by_ocean_plotters: bool = False
     group_by_models: bool = False
     group_by_server_cloud: bool = False
@@ -175,6 +176,7 @@ def get_grouping_preferences(api_key: str = Depends(verify_api_key)):
                         "grouping_mode": "type",
                         "group_by_servers": False,
                         "group_by_datasets": False,
+                        "group_by_thredds": False,
                         "group_by_ocean_plotters": False,
                         "group_by_models": False,
                         "group_by_server_cloud": False
@@ -818,3 +820,267 @@ def sync_cloud():
     except Exception as e:
         print(f"Sync failed: {e}")
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+
+# Ocean Middleware Dataset Endpoints
+OCEAN_MIDDLEWARE_URL = "https://ocean-middleware.spc.int/middleware/api/task_download/"
+
+@router.get("/ocean/datasets", dependencies=[Depends(verify_api_key)])
+def get_ocean_datasets():
+    """Fetch dataset information from Ocean Middleware API"""
+    try:
+        print(f"Fetching datasets from {OCEAN_MIDDLEWARE_URL}")
+        response = requests.get(f"{OCEAN_MIDDLEWARE_URL}?format=json", verify=False, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Filter out Deleted tasks
+        filtered_data = [task for task in data if task.get('health') != 'Deleted']
+        
+        return {
+            "total": len(data),
+            "filtered": len(filtered_data),
+            "datasets": filtered_data
+        }
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching ocean datasets: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch ocean datasets: {str(e)}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@router.post("/ocean/datasets/sync", dependencies=[Depends(verify_api_key)])
+def sync_ocean_datasets():
+    """Sync ocean middleware datasets to local database"""
+    try:
+        print(f"Syncing datasets from {OCEAN_MIDDLEWARE_URL}")
+        response = requests.get(f"{OCEAN_MIDDLEWARE_URL}?format=json", verify=False, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Filter out Deleted tasks
+        filtered_data = [task for task in data if task.get('health') != 'Deleted']
+        
+        synced_count = 0
+        updated_count = 0
+        
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for task in filtered_data:
+                    task_name = task.get('task_name')
+                    if not task_name:
+                        continue
+                    
+                    health = task.get('health', 'unknown')
+                    status = task.get('status', 'unknown')
+                    last_run_time = task.get('last_run_time')
+                    next_run_time = task.get('next_run_time')
+                    success_count = task.get('success_count', 0)
+                    fail_count = task.get('fail_count', 0)
+                    dataset_id = task.get('dataset_id')
+                    
+                    # Map health to status
+                    last_status = 'up' if health == 'Excellent' else 'degraded' if health in ['Good', 'Fair'] else 'down'
+                    
+                    # Check if service exists
+                    cur.execute("SELECT id FROM monitored_services WHERE name = %s AND type = 'datasets'", (task_name,))
+                    existing = cur.fetchone()
+                    
+                    if existing:
+                        # Update existing service
+                        cur.execute("""
+                            UPDATE monitored_services 
+                            SET last_status = %s,
+                                success_count = %s,
+                                failure_count = %s,
+                                updated_at = NOW(),
+                                comment = %s
+                            WHERE id = %s
+                        """, (
+                            last_status,
+                            success_count,
+                            fail_count,
+                            f"Health: {health}, Dataset ID: {dataset_id}",
+                            existing[0]
+                        ))
+                        updated_count += 1
+                    else:
+                        # Insert new service
+                        cur.execute("""
+                            INSERT INTO monitored_services (
+                                name, ip_address, port, protocol, 
+                                check_interval_sec, interval_type, interval_value, interval_unit,
+                                last_status, success_count, failure_count, is_active, type, comment
+                            ) VALUES (
+                                %s, %s, %s, 'api',
+                                3600, 'hours', 1, 'hours',
+                                %s, %s, %s, true, 'datasets', %s
+                            )
+                        """, (
+                            task_name,
+                            'ocean-middleware.spc.int',
+                            443,
+                            last_status,
+                            success_count,
+                            fail_count,
+                            f"Health: {health}, Dataset ID: {dataset_id}"
+                        ))
+                        synced_count += 1
+                
+                conn.commit()
+        
+        return {
+            "status": "success",
+            "total_fetched": len(data),
+            "filtered": len(filtered_data),
+            "synced": synced_count,
+            "updated": updated_count,
+            "message": f"Synced {synced_count} new datasets, updated {updated_count} existing datasets"
+        }
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error syncing ocean datasets: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to sync ocean datasets: {str(e)}")
+    except Exception as e:
+        print(f"Unexpected error during sync: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+# THREDDS Monitoring Endpoints
+OCEAN_MAIN_MENU_URL = "https://ocean-middleware.spc.int/middleware/api/main_menu/"
+OCEAN_LAYER_WEB_MAP_URL = "https://ocean-middleware.spc.int/middleware/api/layer_web_map/"
+
+@router.post("/thredds/sync", dependencies=[Depends(verify_api_key)])
+def sync_thredds_services():
+    """Sync THREDDS services from Ocean Middleware API"""
+    try:
+        print(f"Syncing THREDDS services from {OCEAN_MAIN_MENU_URL}")
+        
+        # Fetch main menu data with theme_id=1
+        response = requests.get(
+            f"{OCEAN_MAIN_MENU_URL}?format=json&theme_id=1",
+            verify=False,
+            timeout=30
+        )
+        response.raise_for_status()
+        menu_data = response.json()
+        
+        synced_count = 0
+        updated_count = 0
+        error_count = 0
+        
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Iterate through all menu items and their content
+                for menu_item in menu_data:
+                    content_items = menu_item.get('content', [])
+                    
+                    for item in content_items:
+                        layer_info_id = item.get('layer_information')
+                        item_name = item.get('name', 'Unknown')
+                        
+                        if not layer_info_id:
+                            print(f"Skipping {item_name}: No layer_information ID")
+                            continue
+                        
+                        try:
+                            # Fetch layer web map data
+                            layer_response = requests.get(
+                                f"{OCEAN_LAYER_WEB_MAP_URL}{layer_info_id}/",
+                                verify=False,
+                                timeout=30
+                            )
+                            layer_response.raise_for_status()
+                            layer_data = layer_response.json()
+                            
+                            # Get the URL from layer data
+                            base_url = layer_data.get('url')
+                            if not base_url:
+                                print(f"Skipping {item_name}: No URL in layer data")
+                                error_count += 1
+                                continue
+                            
+                            # Add WMS GetCapabilities suffix
+                            wms_url = f"{base_url}?service=WMS&version=1.3.0&request=GetCapabilities"
+                            
+                            # Extract host from URL for ip_address field
+                            from urllib.parse import urlparse
+                            parsed_url = urlparse(base_url)
+                            host = parsed_url.netloc
+                            
+                            # Check if service exists
+                            cur.execute(
+                                "SELECT id FROM monitored_services WHERE name = %s AND type = 'thredds'",
+                                (item_name,)
+                            )
+                            existing = cur.fetchone()
+                            
+                            if existing:
+                                # Update existing service
+                                cur.execute("""
+                                    UPDATE monitored_services 
+                                    SET ip_address = %s,
+                                        port = 443,
+                                        protocol = 'wms',
+                                        updated_at = NOW(),
+                                        comment = %s
+                                    WHERE id = %s
+                                """, (
+                                    wms_url,
+                                    f"Layer ID: {layer_info_id}, Base URL: {base_url}",
+                                    existing[0]
+                                ))
+                                conn.commit()  # Commit after each successful operation
+                                updated_count += 1
+                            else:
+                                # Insert new service
+                                # Check every 3 days = 3 * 24 * 60 * 60 = 259200 seconds
+                                cur.execute("""
+                                    INSERT INTO monitored_services (
+                                        name, ip_address, port, protocol,
+                                        check_interval_sec, interval_type, interval_value, interval_unit,
+                                        last_status, success_count, failure_count, is_active, type, comment,
+                                        cron_expression, cron_job_name, collection
+                                    ) VALUES (
+                                        %s, %s, 443, 'wms',
+                                        259200, 'daily', 3, 'days',
+                                        'unknown', 0, 0, true, 'thredds', %s,
+                                        '', '', 'uncategorized'
+                                    )
+                                """, (
+                                    item_name,
+                                    wms_url,
+                                    f"Layer ID: {layer_info_id}, Base URL: {base_url}"
+                                ))
+                                conn.commit()  # Commit after each successful operation
+                                synced_count += 1
+                                
+                        except requests.exceptions.RequestException as e:
+                            print(f"Error fetching layer {layer_info_id} for {item_name}: {e}")
+                            error_count += 1
+                            continue
+                        except Exception as e:
+                            print(f"Unexpected error processing {item_name}: {e}")
+                            conn.rollback()  # Rollback on database errors
+                            error_count += 1
+                            continue
+
+        
+        return {
+            "status": "success",
+            "synced": synced_count,
+            "updated": updated_count,
+            "errors": error_count,
+            "message": f"Synced {synced_count} new THREDDS services, updated {updated_count} existing services, {error_count} errors"
+        }
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error syncing THREDDS services: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to sync THREDDS services: {str(e)}")
+    except Exception as e:
+        print(f"Unexpected error during THREDDS sync: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
