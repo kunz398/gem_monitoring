@@ -26,6 +26,7 @@ function Admin() {
     group_by_models: false,
     group_by_server_cloud: false
   });
+  const [refreshInterval, setRefreshInterval] = useState(30);
 
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -88,6 +89,7 @@ function Admin() {
   useEffect(() => {
     if (isAuthenticated && activeTab === 'dashboard') {
       fetchGroupingPreferences();
+      fetchRefreshInterval();
     }
   }, [isAuthenticated, activeTab]);
 
@@ -99,6 +101,32 @@ function Admin() {
       }
     } catch (err) {
       console.error('Failed to fetch grouping preferences:', err);
+    }
+  };
+
+  const fetchRefreshInterval = async () => {
+    try {
+      const config = await servicesApi.getRefreshInterval();
+      if (config && config.interval) {
+        setRefreshInterval(config.interval);
+      }
+    } catch (err) {
+      console.error('Failed to fetch refresh interval:', err);
+    }
+  };
+
+  const handleRefreshIntervalChange = async (e) => {
+    const newValue = parseInt(e.target.value, 10);
+    if (isNaN(newValue) || newValue < 5) {
+      alert('Please enter a valid interval (minimum 5 seconds)');
+      return;
+    }
+    setRefreshInterval(newValue);
+    try {
+      await servicesApi.updateRefreshInterval({ interval: newValue });
+    } catch (err) {
+      console.error('Failed to update refresh interval:', err);
+      alert('Failed to update refresh interval');
     }
   };
 
@@ -433,6 +461,8 @@ function Admin() {
         payload.port = 0; // External services don't use ports, set to 0
       } else if (payload.protocol === 'http' || payload.protocol === 'https') {
         delete payload.port;
+      } else if (payload.protocol === 'ping') {
+        payload.port = 0; // Ping doesn't use ports, set to 0
       } else {
         const parsedPort = Number(formData.port);
         if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
@@ -940,8 +970,8 @@ function Admin() {
                         />
                       </div>
 
-                      {/* Only show port if protocol is not http/https/external */}
-                      {(formData.protocol !== 'http' && formData.protocol !== 'https' && formData.protocol !== 'external') && (
+                      {/* Only show port if protocol is not http/https/external/ping */}
+                      {(formData.protocol !== 'http' && formData.protocol !== 'https' && formData.protocol !== 'external' && formData.protocol !== 'ping') && (
                         <div className="form-group">
                           <label htmlFor="port">Port</label>
                           <input
@@ -1270,6 +1300,24 @@ function Admin() {
                   <p>Services will be automatically grouped by their assigned "Collection" name. Services without a collection will appear in "Uncategorized".</p>
                 </div>
               )}
+            </div>
+
+            <div className="config-section" style={{ marginTop: '30px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+              <h3>Dashboard Refresh Interval</h3>
+              <p className="help-text">
+                Set how often the dashboard should automatically refresh data (in seconds).
+              </p>
+              <div className="form-group" style={{ maxWidth: '300px' }}>
+                <label htmlFor="refreshInterval">Refresh Interval (seconds):</label>
+                <input
+                  type="number"
+                  id="refreshInterval"
+                  className="form-control"
+                  value={refreshInterval}
+                  onChange={handleRefreshIntervalChange}
+                  min="5"
+                />
+              </div>
             </div>
           </div>
         )}

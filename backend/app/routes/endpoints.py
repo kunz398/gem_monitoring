@@ -152,6 +152,9 @@ class GroupingPreferences(BaseModel):
     group_by_models: bool = False
     group_by_server_cloud: bool = False
 
+class RefreshIntervalConfig(BaseModel):
+    interval: int = 30
+
 @router.get("/grouping-preferences")
 def get_grouping_preferences(api_key: str = Depends(verify_api_key)):
     """Get dashboard grouping preferences"""
@@ -199,6 +202,43 @@ def update_grouping_preferences(prefs: GroupingPreferences, api_key: str = Depen
         return {"status": "success", "preferences": prefs}
     except Exception as e:
         print(f"Error updating grouping preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/refresh-interval")
+def get_refresh_interval(api_key: str = Depends(verify_api_key)):
+    """Get dashboard refresh interval"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT configuration FROM dashboard_configs WHERE name = 'refresh_interval'")
+                result = cur.fetchone()
+                if result and result['configuration']:
+                    return json.loads(result['configuration'])
+                return {"interval": 30}
+    except Exception as e:
+        print(f"Error fetching refresh interval: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/refresh-interval")
+def update_refresh_interval(config: RefreshIntervalConfig, api_key: str = Depends(verify_api_key)):
+    """Update dashboard refresh interval"""
+    try:
+        print(f"Updating refresh interval: {config}")
+        config_json = json.dumps(config.dict())
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # Upsert
+                cur.execute("""
+                    INSERT INTO dashboard_configs (name, configuration) 
+                    VALUES ('refresh_interval', %s)
+                    ON CONFLICT (name) 
+                    DO UPDATE SET configuration = EXCLUDED.configuration
+                """, (config_json,))
+                conn.commit()
+        print("Refresh interval updated successfully")
+        return {"status": "success", "config": config}
+    except Exception as e:
+        print(f"Error updating refresh interval: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/status", summary="Check service health", dependencies=[Depends(verify_api_key)])

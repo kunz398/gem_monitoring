@@ -214,6 +214,15 @@ class DatabaseSchema:
             ON CONFLICT (name) DO NOTHING
         """, (default_grouping_prefs,))
         print(f"✓ Verified default grouping preferences in {table_name}")
+
+        # Insert default refresh interval if not exists
+        default_refresh_interval = '{"interval": 30}'
+        cur.execute("""
+            INSERT INTO dashboard_configs (name, configuration)
+            VALUES ('refresh_interval', %s)
+            ON CONFLICT (name) DO NOTHING
+        """, (default_refresh_interval,))
+        print(f"✓ Verified default refresh interval in {table_name}")
     
     @staticmethod
     def initialize_database():
