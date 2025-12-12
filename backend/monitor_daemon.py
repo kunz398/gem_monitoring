@@ -21,7 +21,7 @@ import psycopg2.pool
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import ocean service check functionality
-from app.monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table
+from app.monitor import ocean_service_check, populate_ocean_tasks_in_monitoring_table, check_dataset_service, check_thredds_service
 
 # Setup logging
 logging.basicConfig(
@@ -271,6 +271,16 @@ class MonitoringDaemon:
         if service_type == "Server Cloud":
             self.check_cloud_service(service)
             return
+        
+        # Check for datasets type
+        if service_type == "datasets":
+            self.check_dataset_service(service)
+            return
+        
+        # Check for thredds type
+        if service_type == "thredds":
+            self.check_thredds_service(service)
+            return
 
         # Skip external services - they report their own status via API
         if protocol == "external":
@@ -366,6 +376,26 @@ class MonitoringDaemon:
             logger.error(f"Error checking ocean service {service['id']}: {e}")
             # Log the error to monitoring_logs
             self.log_monitoring_result(service['id'], "unknown", f"Error: {str(e)}", "Ocean Portal API check")
+            self.update_service_status(service['id'], "unknown")
+    
+    def check_dataset_service(self, service: Dict):
+        """Check dataset services using the check_dataset_service function"""
+        try:
+            result = check_dataset_service(service)
+            logger.info(f"Checked dataset service {service['id']} ({service['name']}): {result['status']}")
+        except Exception as e:
+            logger.error(f"Error checking dataset service {service['id']}: {e}")
+            self.log_monitoring_result(service['id'], "unknown", f"Error: {str(e)}", "Dataset API check")
+            self.update_service_status(service['id'], "unknown")
+    
+    def check_thredds_service(self, service: Dict):
+        """Check THREDDS WMS services using the check_thredds_service function"""
+        try:
+            result = check_thredds_service(service)
+            logger.info(f"Checked THREDDS service {service['id']} ({service['name']}): {result['status']}")
+        except Exception as e:
+            logger.error(f"Error checking THREDDS service {service['id']}: {e}")
+            self.log_monitoring_result(service['id'], "unknown", f"Error: {str(e)}", "THREDDS WMS check")
             self.update_service_status(service['id'], "unknown")
     
     def populate_ocean_tasks(self):

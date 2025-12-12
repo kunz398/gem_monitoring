@@ -410,6 +410,149 @@ def check_cloud_service(service: dict) -> dict:
         update_service_status(service_id, status)
         return {"service_id": service_id, "status": status, "output": message}
 
+def check_thredds_service(service: dict) -> dict:
+    """Check a THREDDS WMS service by verifying GetCapabilities XML response"""
+    service_id = service["id"]
+    service_name = service["name"]
+    wms_url = service["ip_address"]  # Full WMS GetCapabilities URL stored in ip_address
+    
+    try:
+        # Fetch WMS GetCapabilities
+        response = requests.get(
+            wms_url,
+            verify=False,
+            timeout=30
+        )
+        response.raise_for_status()
+        
+        # Check if response contains XML (should start with <?xml or <)
+        content = response.text.strip()
+        is_xml = content.startswith('<?xml') or content.startswith('<')
+        
+        # Check for WMS_Capabilities or similar XML structure
+        has_capabilities = 'WMS_Capabilities' in content or 'Capabilities' in content
+        
+        if is_xml and has_capabilities:
+            status = 'up'
+            message = f"WMS GetCapabilities returned valid XML ({len(content)} bytes)"
+        elif is_xml:
+            status = 'degraded'
+            message = f"WMS returned XML but may not be valid GetCapabilities response"
+        else:
+            status = 'down'
+            message = f"WMS did not return XML response (got {response.headers.get('content-type', 'unknown')})"
+        
+        log_monitoring_result(service_id, status, message, f"GET {wms_url}")
+        update_service_status(service_id, status)
+        
+        return {"service_id": service_id, "status": status, "output": message}
+        
+    except requests.exceptions.Timeout:
+        status = "down"
+        message = f"Timeout accessing WMS endpoint"
+        log_monitoring_result(service_id, status, message, f"GET {wms_url}")
+        update_service_status(service_id, status)
+        return {"service_id": service_id, "status": status, "output": message}
+    except requests.exceptions.RequestException as e:
+        status = "down"
+        message = f"Failed to access WMS endpoint: {str(e)}"
+        log_monitoring_result(service_id, status, message, f"GET {wms_url}")
+        update_service_status(service_id, status)
+        return {"service_id": service_id, "status": status, "output": message}
+    except Exception as e:
+        status = "unknown"
+        message = f"Error checking THREDDS service: {str(e)}"
+        log_monitoring_result(service_id, status, message, f"GET {wms_url}")
+        update_service_status(service_id, status)
+        return {"service_id": service_id, "status": status, "output": message}
+
+def check_dataset_service(service: dict) -> dict:
+    """Check a dataset service by fetching from Ocean Middleware API"""
+    service_id = service["id"]
+    service_name = service["name"]
+    
+    try:
+        # Fetch task data from Ocean Middleware API
+        response = requests.get(
+            f"{OCEAN_API_TASK_DOWNLOAD}?format=json",
+            verify=False,
+            timeout=30
+        )
+        response.raise_for_status()
+        tasks = response.json()
+        
+        # Find the matching task by name
+        matching_task = None
+        for task in tasks:
+            if task.get('task_name') == service_name:
+                matching_task = task
+                break
+        
+        if not matching_task:
+            status = "unknown"
+            message = f"Dataset '{service_name}' not found in Ocean Middleware API"
+            log_monitoring_result(service_id, status, message, "Ocean Middleware API Check")
+            update_service_status(service_id, status)
+            return {"service_id": service_id, "status": status, "output": message}
+        
+        # Get health status from the task
+        health = matching_task.get('health', 'unknown')
+        task_status = matching_task.get('status', 'unknown')
+        success_count = matching_task.get('success_count', 0)
+        fail_count = matching_task.get('fail_count', 0)
+        last_run_time = matching_task.get('last_run_time', 'N/A')
+        
+        # Map health to status
+        if health == 'Excellent':
+            status = 'up'
+        elif health in ['Good', 'Fair']:
+            status = 'degraded'
+        elif health == 'Deleted':
+            status = 'down'
+            message = f"Dataset marked as Deleted in Ocean Middleware"
+        else:
+            status = 'down'
+        
+        message = f"Health: {health}, Status: {task_status}, Success: {success_count}, Fail: {fail_count}, Last Run: {last_run_time}"
+        
+        # Update service with latest counts from API
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE monitored_services
+                    SET
+                        last_status = %s,
+                        success_count = %s,
+                        failure_count = %s,
+                        updated_at = NOW(),
+                        comment = %s
+                    WHERE id = %s
+                """, (
+                    status,
+                    success_count,
+                    fail_count,
+                    f"Health: {health}, Dataset ID: {matching_task.get('dataset_id')}",
+                    service_id
+                ))
+                conn.commit()
+        
+        log_monitoring_result(service_id, status, message, "Ocean Middleware API Check")
+        
+        return {"service_id": service_id, "status": status, "output": message}
+        
+    except requests.exceptions.RequestException as e:
+        status = "unknown"
+        message = f"Failed to fetch from Ocean Middleware API: {str(e)}"
+        log_monitoring_result(service_id, status, message, "Ocean Middleware API Check")
+        update_service_status(service_id, status)
+        return {"service_id": service_id, "status": status, "output": message}
+    except Exception as e:
+        status = "unknown"
+        message = f"Error checking dataset: {str(e)}"
+        log_monitoring_result(service_id, status, message, "Ocean Middleware API Check")
+        update_service_status(service_id, status)
+        return {"service_id": service_id, "status": status, "output": message}
+
 def check_service(service: dict) -> dict:
     protocol = service["protocol"]
     ip = service["ip_address"]
@@ -420,6 +563,14 @@ def check_service(service: dict) -> dict:
     service_type = service.get("type")
     if service_type == "Server Cloud":
         return check_cloud_service(service)
+    
+    # Check for datasets type
+    if service_type == "datasets":
+        return check_dataset_service(service)
+    
+    # Check for thredds type
+    if service_type == "thredds":
+        return check_thredds_service(service)
 
     # Check if this is an ocean middleware service
     if "ocean-middleware.spc.int/middleware/api/" in ip:

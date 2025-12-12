@@ -129,6 +129,21 @@ export const servicesApi = {
       method: 'POST',
       body: JSON.stringify(config),
     }),
+
+  // Get ocean datasets
+  getOceanDatasets: () => apiRequest('/ocean/datasets'),
+
+  // Sync ocean datasets
+  syncOceanDatasets: () =>
+    apiRequest('/ocean/datasets/sync', {
+      method: 'POST',
+    }),
+
+  // Sync THREDDS services
+  syncThreddsServices: () =>
+    apiRequest('/thredds/sync', {
+      method: 'POST',
+    }),
 };
 
 // Monitoring API functions

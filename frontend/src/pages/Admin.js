@@ -54,6 +54,7 @@ function Admin() {
   const serviceTypes = [
     { value: 'servers', label: 'Servers' },
     { value: 'datasets', label: 'Datasets' },
+    { value: 'thredds', label: 'THREDDS' },
     { value: 'ocean-plotters', label: 'Ocean Plotters' },
     { value: 'models', label: 'Models' },
     { value: 'server_cloud', label: 'Server Cloud', disabled: true }
@@ -341,7 +342,7 @@ function Admin() {
     try {
       // Call backend to handle cloud sync (auth + fetch + db update)
       const result = await servicesApi.syncCloud();
-      
+
       if (result && result.items) {
         const count = result.items.length;
         alert(`Cloud Sync Complete: Processed ${count} systems from cloud.`);
@@ -351,6 +352,44 @@ function Admin() {
       await fetchServices();
     } catch (err) {
       console.error('Cloud sync error:', err);
+      alert(`Sync failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncDatasets = async () => {
+    setLoading(true);
+    try {
+      const result = await servicesApi.syncOceanDatasets();
+
+      if (result && result.message) {
+        alert(`Dataset Sync Complete: ${result.message}`);
+      } else {
+        alert('Dataset Sync completed.');
+      }
+      await fetchServices();
+    } catch (err) {
+      console.error('Dataset sync error:', err);
+      alert(`Sync failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncThredds = async () => {
+    setLoading(true);
+    try {
+      const result = await servicesApi.syncThreddsServices();
+
+      if (result && result.message) {
+        alert(`THREDDS Sync Complete: ${result.message}`);
+      } else {
+        alert('THREDDS Sync completed.');
+      }
+      await fetchServices();
+    } catch (err) {
+      console.error('THREDDS sync error:', err);
       alert(`Sync failed: ${err.message}`);
     } finally {
       setLoading(false);
@@ -726,6 +765,24 @@ function Admin() {
                 title="Fetch services from Cloud Monitoring"
               >
                 ☁️ Sync Cloud
+              </button>
+              <button
+                onClick={handleSyncDatasets}
+                disabled={loading}
+                className="btn btn-info"
+                style={{ marginLeft: '10px', backgroundColor: '#10b981', color: 'white' }}
+                title="Fetch datasets from Ocean Middleware"
+              >
+                📊 Sync Datasets
+              </button>
+              <button
+                onClick={handleSyncThredds}
+                disabled={loading}
+                className="btn btn-info"
+                style={{ marginLeft: '10px', backgroundColor: '#8b5cf6', color: 'white' }}
+                title="Fetch THREDDS services from Ocean Middleware"
+              >
+                🌊 Sync THREDDS
               </button>
               {/* <button 
             onClick={() => setShowHelp(!showHelp)} 
@@ -1271,7 +1328,7 @@ function Admin() {
                       // servers -> group_by_servers
                       // server_cloud -> group_by_server_cloud
                       const prefKey = `group_by_${type.value.replace('-', '_')}`;
-                      
+
                       return (
                         <div key={type.value} className="form-group" style={{ marginBottom: 0 }}>
                           <div className="toggle-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
