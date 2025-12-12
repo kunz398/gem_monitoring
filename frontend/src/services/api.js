@@ -119,6 +119,16 @@ export const servicesApi = {
       method: 'POST',
       body: JSON.stringify(prefs),
     }),
+
+  // Get refresh interval
+  getRefreshInterval: () => apiRequest('/refresh-interval'),
+
+  // Update refresh interval
+  updateRefreshInterval: (config) =>
+    apiRequest('/refresh-interval', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
 };
 
 // Monitoring API functions

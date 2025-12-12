@@ -43,13 +43,37 @@ function Dashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // Add sidebar state
   const [groupingPreferences, setGroupingPreferences] = useState({});
   const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const [refreshInterval, setRefreshInterval] = useState(30);
 
   useEffect(() => {
     checkApiStatus();
     document.title = 'Dashboard - Service Monitoring';
     fetchServices();
     fetchGroupingPreferences();
+    fetchRefreshInterval();
   }, []);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (!refreshInterval || refreshInterval <= 0) return;
+
+    const intervalId = setInterval(() => {
+      fetchServices(true);
+    }, refreshInterval * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [refreshInterval]);
+
+  const fetchRefreshInterval = async () => {
+    try {
+      const config = await servicesApi.getRefreshInterval();
+      if (config && config.interval) {
+        setRefreshInterval(config.interval);
+      }
+    } catch (err) {
+      console.error('Failed to fetch refresh interval:', err);
+    }
+  };
 
   const fetchGroupingPreferences = async () => {
     try {
@@ -72,8 +96,8 @@ function Dashboard() {
     }
   };
 
-  const fetchServices = async () => {
-    setLoading(true);
+  const fetchServices = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     setError(null);
     try {
       const data = await servicesApi.getAll();
@@ -84,7 +108,7 @@ function Dashboard() {
       setError(err.output || err.message);
       setServices([]); // Set empty array on error
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -301,22 +325,24 @@ function Dashboard() {
               {/* Service Summary Cards */}
               <div className="summary-cards">
                 {(() => {
-                   // Calculate stats per type
-                   const statsByType = {};
-                   (services || []).forEach(service => {
-                      const type = service.type || 'Other';
-                      // Normalize type for aggregation if needed, but keeping it simple for now
-                      // We might want to map 'server_cloud' to 'Server Cloud' here or later
-                      
-                      let normalizedType = type;
-                      if (type === 'server_cloud') normalizedType = 'Server Cloud';
+                   const isCollectionMode = groupingPreferences.grouping_mode === 'collection';
+                   const stats = {};
 
-                      if (!statsByType[normalizedType]) {
-                         statsByType[normalizedType] = { total: 0, up: 0 };
+                   (services || []).forEach(service => {
+                      let key;
+                      if (isCollectionMode) {
+                        key = service.collection || 'Uncategorized';
+                      } else {
+                        key = service.type || 'Other';
+                        if (key === 'server_cloud') key = 'Server Cloud';
                       }
-                      statsByType[normalizedType].total += 1;
+
+                      if (!stats[key]) {
+                         stats[key] = { total: 0, up: 0 };
+                      }
+                      stats[key].total += 1;
                       if ((service.last_status || '').toLowerCase() === 'up') {
-                         statsByType[normalizedType].up += 1;
+                         stats[key].up += 1;
                       }
                    });
 
@@ -329,10 +355,10 @@ function Dashboard() {
                       'Server Cloud': 'Server Cloud'
                    };
 
-                   return Object.entries(statsByType).map(([type, stats]) => {
-                      const label = typeLabels[type] || type;
-                      const isAllUp = stats.up === stats.total;
-                      const isNoneUp = stats.up === 0;
+                   return Object.entries(stats).map(([key, stat]) => {
+                      const label = isCollectionMode ? key : (typeLabels[key] || key);
+                      const isAllUp = stat.up === stat.total;
+                      const isNoneUp = stat.up === 0;
                       
                       let statusClass = 'warning';
                       let icon = mdiChartBellCurveCumulative;
@@ -349,13 +375,13 @@ function Dashboard() {
                       }
 
                       return (
-                        <div key={type} className={`summary-card ${statusClass}`}>
+                        <div key={key} className={`summary-card ${statusClass}`}>
                           <div className="summary-icon">
                             <Icon path={icon} size={1.5} color={color} />
                           </div>
                           <div className="summary-content">
                             <div className="summary-number">
-                              {stats.up}/{stats.total}
+                              {stat.up}/{stat.total}
                             </div>
                             <div className="summary-label">{label} Up</div>
                           </div>

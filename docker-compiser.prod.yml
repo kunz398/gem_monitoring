@@ -1,30 +1,49 @@
-version: "3.9"
-
 services:
-  # Backend API service
+  # Backend API service with integrated cron
   devapi:
-    build: 
+    cap_add:
+      - NET_RAW
+    build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8011:8011"
+    volumes:
+      - ./backend:/app
+    working_dir: /app
     env_file:
-      - .env.prod
+      - .env
     depends_on:
       - db
-    command: >
-      gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
     networks:
       - app-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # React frontend service (Production)
+  # React frontend service
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: production  # Use production stage
     ports:
-      - "80:80"
+      - "3111:3111"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    environment:
+      - BROWSER=none
+    #  - REACT_APP_API_URL=http://localhost:8011/service
+      - REACT_APP_API_URL=https://opmthredds.gem.spc.int/service
+      - PORT=3111
+      - HOST=0.0.0.0
+      - WDS_SOCKET_HOST=localhost
+      - WDS_SOCKET_PORT=3111
+      - CHOKIDAR_USEPOLLING=true
     depends_on:
       - devapi
     networks:
@@ -38,6 +57,8 @@ services:
       POSTGRES_DB: "${DB_NAME}"
       POSTGRES_USER: "${DB_USER}"
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
