@@ -428,19 +428,32 @@ def check_thredds_service(service: dict) -> dict:
         # Check if response contains XML (should start with <?xml or <)
         content = response.text.strip()
         is_xml = content.startswith('<?xml') or content.startswith('<')
+        content_type = response.headers.get('content-type', 'unknown').lower()
         
         # Check for WMS_Capabilities or similar XML structure
         has_capabilities = 'WMS_Capabilities' in content or 'Capabilities' in content
         
+        # Check if response is valid JSON
+        is_json = False
+        if 'application/json' in content_type or content.startswith('{') or content.startswith('['):
+            try:
+                json_data = json.loads(content)
+                is_json = True
+            except json.JSONDecodeError:
+                is_json = False
+        
         if is_xml and has_capabilities:
             status = 'up'
             message = f"WMS GetCapabilities returned valid XML ({len(content)} bytes)"
+        elif is_json:
+            status = 'up'
+            message = f"WMS GetCapabilities returned valid JSON ({len(content)} bytes)"
         elif is_xml:
             status = 'degraded'
             message = f"WMS returned XML but may not be valid GetCapabilities response"
         else:
             status = 'down'
-            message = f"WMS did not return XML response (got {response.headers.get('content-type', 'unknown')})"
+            message = f"WMS did not return valid XML or JSON response (got {content_type})"
         
         log_monitoring_result(service_id, status, message, f"GET {wms_url}")
         update_service_status(service_id, status)
