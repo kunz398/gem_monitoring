@@ -609,12 +609,18 @@ def get_monitoring_logs(filter: MonitoringLogFilter):
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        query += " ORDER BY monitoring_logs.checked_at DESC"
+        query += " ORDER BY monitoring_logs.checked_at DESC LIMIT 1000"
 
         with get_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(query, tuple(params))
                 logs = cur.fetchall()
+                
+                # Truncate large messages to prevent Content-Length mismatch
+                for log in logs:
+                    if log.get('message') and len(log['message']) > 2000:
+                        log['message'] = log['message'][:2000] + '... (truncated)'
+                
                 return logs
     except Exception as e:
         print(f"Database error in get_monitoring_logs: {e}")

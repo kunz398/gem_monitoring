@@ -121,7 +121,8 @@ function Dashboard() {
       setEventRefreshTrigger(prev => prev + 1);
       alert('Monitoring completed!');
     } catch (err) {
-      alert(`Monitoring failed: ${err.output}`);
+      console.error('Monitoring error:', err);
+      alert(`Monitoring failed: ${err.output || err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -140,7 +141,8 @@ function Dashboard() {
       // Trigger event log refresh after single monitoring
       setEventRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert(`Monitoring failed: ${err.output}`);
+      console.error('Monitoring error:', err);
+      alert(`Monitoring failed: ${err.output || err.message || 'Unknown error'}`);
     }
   };
 
