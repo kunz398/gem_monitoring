@@ -2,7 +2,7 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
-  "homepage": "/monitoring",
+  "homepage": "/widget10",
   "dependencies": {
     "@mdi/js": "^7.4.47",
     "@mdi/react": "^1.6.1",
@@ -16,6 +16,7 @@
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.2",
     "react-scripts": "5.0.1",
+    "http-proxy-middleware": "^2.0.6",
     "recharts": "^2.15.3",
     "web-vitals": "^2.1.4"
   },

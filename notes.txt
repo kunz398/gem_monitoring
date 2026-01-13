@@ -111,11 +111,13 @@ tail -f /var/log/cron/monitoring.log
 
 docker-compose down
 
-docker cp monitoring_db_backup.sql gem_monitoring_db_1:/monitoring_db_backup.sql
+docker cp monitoring_db_backup.sql gem_monitoring_db_1:/monitoring_db_backup1122026.sql
 docker exec -it  gem_monitoring-db-1 bash
 
 cd /data/forecast-model/COK/CIS-PAC5-Rarotonfa-Forecast-System-main/
 psql --U gem_user -d monitoring_db -f /monitoring_db_backup.sql
+
+docker exec -t gem_monitoring_db_1 pg_dump -U gem_user monitoring_db > monitoring_db_backup1122026.sql
 
 docker-compose up --build -d
 

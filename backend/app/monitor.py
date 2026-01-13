@@ -403,6 +403,12 @@ def check_cloud_service(service: dict) -> dict:
                 
         return {"service_id": service_id, "status": status, "output": message}
 
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        print(f"Network error checking cloud service {service_id} (likely backend isolation): {e}")
+        log_monitoring_result(service_id, "unknown", f"Backend Network Error: {str(e)}. Preserving last known status.", f"GET {url}")
+        # Note: We do NOT call update_service_status(service_id, "unknown") here
+        return {"service_id": service_id, "status": "unknown_network_error", "output": str(e)}
+
     except Exception as e:
         status = "unknown"
         message = f"Exception: {str(e)}"

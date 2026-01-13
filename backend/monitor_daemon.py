@@ -120,7 +120,7 @@ class MonitoringDaemon:
                 cur.execute("""
                     SELECT id, name, ip_address, port, protocol, 
                            interval_type, interval_value, interval_unit,
-                           last_status, success_count, failure_count, type
+                           last_status, success_count, failure_count, type, monitoring_proxy
                     FROM monitored_services 
                     WHERE is_active = true 
                     ORDER BY id
@@ -252,6 +252,12 @@ class MonitoringDaemon:
                     
             logger.info(f"Checked cloud service {service_id} ({service_name}): {status}")
 
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            logger.error(f"Network error checking cloud service {service_id} (likely backend isolation): {e}")
+            self.log_monitoring_result(service_id, "unknown", f"Backend Network Error: {str(e)}. Preserving last known status.", f"GET {url}")
+            # Note: We do NOT call self.update_service_status(service_id, "unknown") here
+            # to avoid overwriting the 'Good' status from frontend syncs.
+            
         except Exception as e:
             logger.error(f"Error checking cloud service {service_id}: {e}")
             self.log_monitoring_result(service_id, "unknown", f"Exception: {str(e)}", f"GET {url}")
@@ -449,6 +455,13 @@ class MonitoringDaemon:
                     next_run = self.service_schedules.get(service_id)
                     
                     if next_run and current_time >= next_run:
+                        # Skip if monitoring is set to frontend proxy
+                        if service.get('monitoring_proxy') == 'frontend':
+                            # logger.debug(f"Skipping service {service_id} - set to frontend monitoring")
+                            # We still update the schedule so it doesn't try every second
+                            self.service_schedules[service_id] = self.calculate_next_run_time(service, current_time)
+                            continue
+
                         services_to_check.append(service)
                         self.service_schedules[service_id] = self.calculate_next_run_time(service, current_time)
                     elif next_run:

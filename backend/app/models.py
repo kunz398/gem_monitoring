@@ -53,7 +53,7 @@ class DatabaseSchema:
             CREATE OR REPLACE FUNCTION update_updated_at_column()
             RETURNS TRIGGER AS $$
             BEGIN
-                NEW.updated_at = CURRENT_TIMESTAMP;
+                NEW.updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC';
                 RETURN NEW;
             END;
             $$ LANGUAGE plpgsql;
@@ -82,8 +82,8 @@ class DatabaseSchema:
                     last_status TEXT DEFAULT 'unknown',
                     success_count INTEGER DEFAULT 0,
                     failure_count INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     comment TEXT,
                     is_active BOOLEAN DEFAULT true,
                     display_order INTEGER,
@@ -120,6 +120,8 @@ class DatabaseSchema:
                 new_columns.append(("is_active", "BOOLEAN DEFAULT true"))
             if 'collection' not in existing_cols:
                 new_columns.append(("collection", "TEXT DEFAULT 'uncategorized'"))
+            if 'monitoring_proxy' not in existing_cols:
+                new_columns.append(("monitoring_proxy", "TEXT DEFAULT 'backend'"))
             
             # Add new columns
             for col_name, col_def in new_columns:
@@ -140,11 +142,11 @@ class DatabaseSchema:
                 CREATE TABLE monitoring_logs (
                     id SERIAL PRIMARY KEY,
                     service_id INTEGER,
-                    checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    checked_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     status TEXT NOT NULL,
                     message TEXT,
                     notification_sent BOOLEAN DEFAULT false,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     comment TEXT,
                     CONSTRAINT monitoring_logs_service_id_fkey 
                         FOREIGN KEY (service_id) 
@@ -223,6 +225,15 @@ class DatabaseSchema:
             ON CONFLICT (name) DO NOTHING
         """, (default_refresh_interval,))
         print(f"✓ Verified default refresh interval in {table_name}")
+
+        # Insert placeholder cloud monitoring token if not exists
+        # This prevents "No cloud token found" error, though actual authentication will fail until updated
+        cur.execute("""
+            INSERT INTO dashboard_configs (name, configuration)
+            VALUES ('cloud-monitoring.corp.spc.int', 'PLACEHOLDER_TOKEN_PLEASE_UPDATE')
+            ON CONFLICT (name) DO NOTHING
+        """)
+        print(f"✓ Verified placeholder cloud token in {table_name}")
     
     @staticmethod
     def initialize_database():
@@ -241,6 +252,21 @@ class DatabaseSchema:
                     DatabaseSchema.create_monitored_services_table(cur)
                     DatabaseSchema.create_monitoring_logs_table(cur)
                     DatabaseSchema.create_dashboard_configs_table(cur)
+                    
+                    # Migration: Convert existing TIMESTAMP columns to TIMESTAMPTZ
+                    print("Checking for TIMESTAMP to TIMESTAMPTZ conversions...")
+                    tables_to_migrate = {
+                        'monitored_services': ['created_at', 'updated_at'],
+                        'monitoring_logs': ['checked_at', 'updated_at']
+                    }
+                    
+                    for table, columns in tables_to_migrate.items():
+                        if DatabaseSchema.table_exists(cur, table):
+                            cols_info = DatabaseSchema.get_table_columns(cur, table)
+                            for col in columns:
+                                if col in cols_info and 'timestamp without time zone' in cols_info[col]['data_type'].lower():
+                                    print(f"  Migrating {table}.{col} to TIMESTAMPTZ")
+                                    cur.execute(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE TIMESTAMPTZ USING {col} AT TIME ZONE 'UTC'")
                     
                     conn.commit()
                     print("="*60)

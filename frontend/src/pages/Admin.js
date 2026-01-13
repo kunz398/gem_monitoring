@@ -182,7 +182,9 @@ function Admin() {
       comment: '',
       check_interval_sec: 60,
       display_order: '',
-      type: ''
+      type: '',
+      collection: 'uncategorized',
+      monitoring_proxy: 'backend'
     });
     setSelectedService(null);
     setShowForm(false);
@@ -340,8 +342,61 @@ function Admin() {
   const handleSyncCloud = async () => {
     setLoading(true);
     try {
-      // Call backend to handle cloud sync (auth + fetch + db update)
-      const result = await servicesApi.syncCloud();
+      // 1. Try Backend Sync first (Cleanest if it worked)
+      let result;
+      try {
+        result = await servicesApi.syncCloud();
+      } catch (backendError) {
+        // Check if error is related to network/timeout (VPN issue)
+        const msg = backendError.message.toLowerCase();
+        const isNetworkError = msg.includes('504') ||
+          msg.includes('502') ||
+          msg.includes('timeout') ||
+          msg.includes('timed out') ||
+          msg.includes('connection refused');
+
+        if (isNetworkError) {
+          console.warn("Backend failed to reach cloud (likely VPN isolation). Attempting Frontend Fetch...");
+
+          // 2. Frontend Fetch Fallback
+          // Credentials (from existing backend config)
+          const CLOUD_AUTH_URL = "https://cloud-monitoring.corp.spc.int/api/collections/users/auth-with-password";
+          const CLOUD_RECORDS_URL = "https://cloud-monitoring.corp.spc.int/api/collections/systems/records";
+          const IDENTITY = "divesha@spc.int";
+          const PASSWORD = "Un2345678";
+
+          try {
+            // A. Authenticate
+            const authRes = await fetch(CLOUD_AUTH_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ identity: IDENTITY, password: PASSWORD })
+            });
+
+            if (!authRes.ok) throw new Error(`Frontend Auth Failed: ${authRes.status}`);
+            const authData = await authRes.json();
+            const token = authData.token;
+
+            // B. Fetch Items
+            const itemsRes = await fetch(CLOUD_RECORDS_URL, {
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+
+            if (!itemsRes.ok) throw new Error(`Frontend Fetch Failed: ${itemsRes.status}`);
+            const data = await itemsRes.json();
+
+            // C. Send to Backend
+            console.info(`Frontend fetched ${data.items ? data.items.length : 0} items. Sending to backend...`);
+            result = await servicesApi.syncCloud(data);
+
+          } catch (feError) {
+            console.error("Frontend Fallback also failed:", feError);
+            throw new Error(`Both Backend and Frontend sync failed. Backend: ${backendError.message}. Frontend: ${feError.message}`);
+          }
+        } else {
+          throw backendError; // Re-throw non-network errors
+        }
+      }
 
       if (result && result.items) {
         const count = result.items.length;
@@ -417,7 +472,8 @@ function Admin() {
       check_interval_sec: service.check_interval_sec || 60,
       display_order: typeof service.display_order === 'number' ? service.display_order : '',
       type: service.type || 'servers',
-      collection: service.collection || 'uncategorized'
+      collection: service.collection || 'uncategorized',
+      monitoring_proxy: service.monitoring_proxy || 'backend'
     });
     setShowForm(true);
   };
@@ -439,7 +495,8 @@ function Admin() {
         check_interval_sec: service.check_interval_sec || 60,
         display_order: typeof service.display_order === 'number' ? service.display_order : '',
         type: service.type || 'servers',
-        collection: service.collection || 'uncategorized'
+        collection: service.collection || 'uncategorized',
+        monitoring_proxy: service.monitoring_proxy || 'backend'
       });
       setShowForm(true);
     } catch (err) {
@@ -968,6 +1025,23 @@ function Admin() {
                       </div>
 
                       <div className="form-group">
+                        <label htmlFor="monitoring_proxy">Monitoring Proxy</label>
+                        <select
+                          id="monitoring_proxy"
+                          name="monitoring_proxy"
+                          value={formData.monitoring_proxy || 'backend'}
+                          onChange={handleInputChange}
+                          disabled={formMode === 'view'}
+                        >
+                          <option value="backend">Backend (Server)</option>
+                          <option value="frontend">Frontend (Browser)</option>
+                        </select>
+                        <p className="field-help" style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>
+                          Choose Browser if the server cannot reach this URL.
+                        </p>
+                      </div>
+
+                      <div className="form-group">
                         <label htmlFor="collection">Collection</label>
                         <input
                           type="text"
@@ -979,6 +1053,7 @@ function Admin() {
                           placeholder="e.g., uncategorized"
                         />
                       </div>
+
 
                       <div className="form-group">
                         <label htmlFor="protocol">Protocol *</label>
