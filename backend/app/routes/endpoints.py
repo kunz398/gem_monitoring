@@ -1,14 +1,15 @@
 from app.monitor import monitor_all_services, check_service, fetch_service
 from app.cron_manager import cron_manager
-from fastapi import APIRouter, Depends, HTTPException, status, Body, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Query, Body, status, BackgroundTasks
 from pydantic import BaseModel, IPvAnyAddress, constr, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.auth import verify_api_key
 from app.db import get_connection, get_connection_pool  # Using connection pool
 import psycopg2.extras
 import subprocess
 import requests
 from datetime import datetime
+import socket
 from typing import Dict, Any
 import requests
 import json
@@ -43,6 +44,7 @@ class ServiceBase(BaseModel):
     display_order: Optional[int] = Field(default=None, ge=0)
     type: Optional[str] = Field(default='servers')
     collection: Optional[str] = Field(default='uncategorized')
+    monitoring_proxy: Optional[str] = Field(default='backend')
 
 class ServiceCreate(ServiceBase):
     pass
@@ -61,6 +63,7 @@ class ServiceUpdate(BaseModel):
     display_order: Optional[int] = Field(default=None, ge=0)
     type: Optional[str] = Field(default=None)
     collection: Optional[str] = Field(default=None)
+    monitoring_proxy: Optional[str] = Field(default=None)
 
 class ServiceOut(BaseModel):
     id: int
@@ -85,6 +88,7 @@ class ServiceOut(BaseModel):
     display_order: Optional[int] = None
     type: Optional[str] = None
     collection: Optional[str] = None
+    monitoring_proxy: Optional[str] = None
 
 
 
@@ -380,15 +384,15 @@ def insert_service(service: ServiceCreate):
                     INSERT INTO monitored_services (
                         name, ip_address, port, protocol, check_interval_sec, 
                         interval_type, interval_value, interval_unit, comment,
-                        display_order, type, collection
+                        display_order, type, collection, monitoring_proxy
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     service.name, str(service.ip_address), service.port, service.protocol, 
                     service.check_interval_sec, service.interval_type, service.interval_value, 
                     service.interval_unit, service.comment, display_order_value, service.type,
-                    service.collection
+                    service.collection, service.monitoring_proxy
                 ))
                 result = cur.fetchone()
                 service_id = result[0] if result else None
@@ -444,7 +448,7 @@ def insert_monitor_log(monitor_log: MonitoringLogCreate) -> int:
                         last_status = %s,
                         success_count = success_count + %s,
                         failure_count = failure_count + %s,
-                        updated_at = NOW()
+                        updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
                     WHERE id = %s
                 """, (status_val, success_inc, failure_inc, monitor_log.service_id))
 
@@ -695,10 +699,24 @@ def authenticate_and_store_token():
     headers = {'Content-Type': 'application/json'}
     
     print(f"Authenticating to {auth_url}...")
+    
+    # Debug DNS resolution
     try:
-        response = requests.post(auth_url, headers=headers, json=auth_payload, verify=False)
-        response.raise_for_status()
-        
+        hostname = "cloud-monitoring.corp.spc.int"
+        ip = socket.gethostbyname(hostname)
+        print(f"DNS Debug: {hostname} resolved to {ip}")
+    except Exception as e:
+        print(f"DNS Debug: Failed to resolve {hostname}: {e}")
+        raise HTTPException(status_code=502, detail=f"DNS Resolution Failed for {hostname}. Error: {str(e)}")
+
+    try:
+        response = requests.post(auth_url, headers=headers, json=auth_payload, verify=False, timeout=10)
+        try:
+             response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP Error {response.status_code}. Headers: {response.headers}. Content: {response.text}")
+            raise e
+            
         auth_data = response.json()
         token = auth_data.get("token")
         
@@ -718,114 +736,147 @@ def authenticate_and_store_token():
         
         return token
         
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Authentication timed out. Unable to connect to corporate network (VPN required?)")
+    except requests.exceptions.ConnectionError as e:
+        print(f"Connection Error caught: {e}")
+        raise HTTPException(status_code=502, detail=f"Authentication connection failed. Check VPN/Network. Error: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        print(f"Request Exception caught: {e}")
+        raise HTTPException(status_code=500, detail=f"Network request failed: {str(e)}")
     except Exception as e:
-        print(f"Authentication failed: {e}")
+        print(f"Authentication failed (General): {e}")
         raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
 
 @router.post("/cloud/sync", dependencies=[Depends(verify_api_key)])
-def sync_cloud():
-    token = get_stored_token()
+def sync_cloud(payload: Optional[Dict[str, Any]] = Body(None)):
+    data = {}
     
-    if not token:
-        print("No token found in DB, authenticating...")
-        token = authenticate_and_store_token()
-    
-    systems_url = f"{CLOUD_BASE_URL}/api/collections/systems/records"
-    
-    def fetch_systems(auth_token):
-        headers = {
-            'Authorization': f'Bearer {auth_token}',
-            'Content-Type': 'application/json'
-        }
-        print(f"Fetching systems from {systems_url}...")
-        return requests.get(systems_url, headers=headers, verify=False)
-
-    try:
-        response = fetch_systems(token)
+    # If client provided data (Frontend Fetch), use it
+    if payload and "items" in payload:
+        print("Received cloud data directly from client, skipping backend fetch...")
+        data = payload
+    else:
+        # Backend Fetch (Legacy/Server-side)
+        token = get_stored_token()
         
-        # Check if request failed or returned empty items as per user requirement
-        should_refresh = False
-        if response.status_code != 200:
-            should_refresh = True
-            print(f"Request failed with status {response.status_code}")
-        else:
-            try:
-                data = response.json()
-                if "items" in data and len(data["items"]) == 0:
-                    should_refresh = True
-                    print("Response contained 0 items, assuming token issue...")
-            except ValueError:
-                should_refresh = True
-                print("Invalid JSON response")
-        
-        if should_refresh:
-            print("Refreshing token and retrying...")
+        if not token:
+            print("No token found in DB, authenticating...")
             token = authenticate_and_store_token()
-            response = fetch_systems(token)
-            response.raise_for_status()
-            data = response.json()
-
-        # Sync items to database
-        if "items" in data:
-            try:
-                print(f"Syncing {len(data['items'])} items to database...")
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        for item in data["items"]:
-                            name = item.get('name')
-                            if not name:
-                                continue
-
-                            ip_address = item.get('host', '')
-                            try:
-                                port = int(item.get('port')) if item.get('port') else None
-                            except (ValueError, TypeError):
-                                port = None
-
-                            status_val = item.get('status', 'unknown')
-                            updated_str = item.get('updated')
-                            created_str = item.get('created')
-
-                            # Check if service exists
-                            cur.execute("SELECT id FROM monitored_services WHERE name = %s", (name,))
-                            existing = cur.fetchone()
-
-                            if existing:
-                                # Update existing service
-                                cur.execute("""
-                                    UPDATE monitored_services 
-                                    SET ip_address = %s,
-                                        port = %s,
-                                        last_status = %s,
-                                        updated_at = %s,
-                                        type = 'Server Cloud'
-                                    WHERE id = %s
-                                """, (ip_address, port, status_val, updated_str, existing[0]))
-                            else:
-                                # Insert new service
-                                cur.execute("""
-                                    INSERT INTO monitored_services (
-                                        name, ip_address, port, protocol, 
-                                        check_interval_sec, interval_type, interval_value, interval_unit,
-                                        last_status, created_at, updated_at, is_active, type
-                                    ) VALUES (
-                                        %s, %s, %s, 'api',
-                                        300, 'minutes', 5, 'minutes',
-                                        %s, %s, %s, true, 'Server Cloud'
-                                    )
-                                """, (name, ip_address, port, status_val, created_str, updated_str))
-                        
-                        conn.commit()
-                        print("Database sync complete.")
-            except Exception as e:
-                print(f"Error syncing to database: {e}")
-                # Continue to return data even if DB sync fails
-            
-        return data
         
-    except Exception as e:
-        print(f"Sync failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+        systems_url = f"{CLOUD_BASE_URL}/api/collections/systems/records"
+        
+        def fetch_systems(auth_token):
+            headers = {
+                'Authorization': f'Bearer {auth_token}',
+                'Content-Type': 'application/json'
+            }
+            print(f"Fetching systems from {systems_url}...")
+            return requests.get(systems_url, headers=headers, verify=False, timeout=30)
+
+        try:
+            response = fetch_systems(token)
+            
+            # Check if request failed or returned empty items as per user requirement
+            should_refresh = False
+            if response.status_code != 200:
+                should_refresh = True
+                print(f"Request failed with status {response.status_code}")
+            else:
+                try:
+                    data = response.json()
+                    if "items" in data and len(data["items"]) == 0:
+                        should_refresh = True
+                        print("Response contained 0 items, assuming token issue...")
+                except ValueError:
+                    should_refresh = True
+                    print("Invalid JSON response")
+            
+            if should_refresh:
+                print("Refreshing token and retrying...")
+                token = authenticate_and_store_token()
+                response = fetch_systems(token)
+                response.raise_for_status()
+                data = response.json()
+                
+        except requests.exceptions.Timeout:
+            print(f"Sync timed out")
+            raise HTTPException(status_code=504, detail="Sync request timed out. Unable to reach corporate network.")
+        except requests.exceptions.ConnectionError:
+            print(f"Sync connection failed")
+            raise HTTPException(status_code=502, detail="Sync request connection failed. Ensure you are connected to the corporate network/VPN.")
+        except Exception as e:
+            print(f"Sync failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+    # Sync items to database
+    if "items" in data:
+        try:
+            print(f"Syncing {len(data['items'])} items to database...")
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    for item in data["items"]:
+                        name = item.get('name')
+                        if not name:
+                            continue
+
+                        ip_address = item.get('host', '')
+                        try:
+                            port = int(item.get('port')) if item.get('port') else None
+                        except (ValueError, TypeError):
+                            port = None
+
+                        status_val = item.get('status', 'unknown')
+                        updated_str = item.get('updated')
+                        created_str = item.get('created')
+
+                        # Check if service exists
+                        cur.execute("SELECT id FROM monitored_services WHERE name = %s", (name,))
+                        existing = cur.fetchone()
+
+                        if existing:
+                            service_id = existing[0]
+                            # Update existing service
+                            cur.execute("""
+                                UPDATE monitored_services 
+                                SET ip_address = %s,
+                                    port = %s,
+                                    last_status = %s,
+                                    updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+                                    type = 'Server Cloud'
+                                WHERE id = %s
+                            """, (ip_address, port, status_val, service_id))
+                        else:
+                            # Insert new service
+                            cur.execute("""
+                                INSERT INTO monitored_services (
+                                    name, ip_address, port, protocol, 
+                                    check_interval_sec, interval_type, interval_value, interval_unit,
+                                    last_status, created_at, updated_at, is_active, type
+                                ) VALUES (
+                                    %s, %s, %s, 'api',
+                                    300, 'minutes', 5, 'minutes',
+                                    %s, %s, CURRENT_TIMESTAMP AT TIME ZONE 'UTC', true, 'Server Cloud'
+                                ) RETURNING id
+                            """, (name, ip_address, port, status_val, created_str))
+                            service_id = cur.fetchone()[0]
+
+                        # Log the monitoring result
+                        log_message = f"Cloud API Check: {status_val}. Host: {ip_address}. Source: {'Frontend Proxy' if payload and 'items' in payload else 'Backend Fetch'}"
+                        cur.execute("""
+                            INSERT INTO monitoring_logs (service_id, status, message)
+                            VALUES (%s, %s, %s)
+                        """, (service_id, status_val, log_message))
+                    
+                    conn.commit()
+                    print("Database sync complete.")
+        except Exception as e:
+            print(f"Error syncing to database: {e}")
+            # Continue to return data even if DB sync fails
+        
+    return data
+        
+
 
 
 # Ocean Middleware Dataset Endpoints

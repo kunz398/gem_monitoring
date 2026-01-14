@@ -1,10 +1,10 @@
 // src/components/EventLogPanel.js
 import React, { useState, useEffect, useCallback } from 'react';
 import Icon from '@mdi/react';
-import { 
-  mdiCheckCircle, 
-  mdiCloseCircle, 
-  mdiRefresh, 
+import {
+  mdiCheckCircle,
+  mdiCloseCircle,
+  mdiRefresh,
   mdiHistory,
   mdiAlertCircle,
   mdiClockOutline,
@@ -23,35 +23,34 @@ const EventLogPanel = ({ refreshTrigger = 0, isCollapsed, onToggleCollapse }) =>
     setLoading(true);
     setError(null);
     try {
-   const now = new Date(); // current local time
+      const now = new Date(); // current local time
 
-// End time = today at 23:59:59.999
-const endTime = new Date();
-endTime.setHours(23, 59, 59, 999);
+      // End time = today at 23:59:59.999
+      const endTime = new Date();
+      endTime.setHours(23, 59, 59, 999);
 
-// Start time = 2 days ago at 00:00:00.000
-const startTime = new Date();
-startTime.setDate(now.getDate() - 2);
-startTime.setHours(0, 0, 0, 0);
+      // Start time = 2 days ago at 00:00:00.000
+      const startTime = new Date();
+      startTime.setDate(now.getDate() - 2);
+      startTime.setHours(0, 0, 0, 0);
 
-const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://opmthredds.gem.spc.int/service'}/monitoring_logs`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'x-api-key': process.env.REACT_APP_API_KEY || 'ssshh',
-  },
-  body: JSON.stringify({
-    start_time: startTime.toISOString(),
-    end_time: endTime.toISOString()
-  })
-});
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const logs = await response.json();
-      
+      // Use central API client to ensure correct base URL is used (and include debug)
+      console.info('DEBUG: EventLogPanel using API_BASE_URL ->', process.env.REACT_APP_API_URL);
+      const logs = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8085/widget10-api'}/monitoring_logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.REACT_APP_API_KEY || 'ssshh',
+        },
+        body: JSON.stringify({
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString()
+        })
+      }).then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      });
+
       // Transform logs into events format based on the provided structure
       const transformedEvents = (logs || [])
         .sort((a, b) => new Date(b.checked_at) - new Date(a.checked_at)) // Sort by most recent first
@@ -67,7 +66,7 @@ const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://opmthr
           responseTime: null, // Not provided in this API response
           details: log.message
         }));
-      
+
       setEvents(transformedEvents);
     } catch (err) {
       console.error('Failed to fetch events:', err);
@@ -111,21 +110,27 @@ const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://opmthr
     }
   };
 
-const formatRelativeTime = (timestamp) => {
-  if (!timestamp) return 'Unknown time';
+  const formatRelativeTime = (timestamp) => {
+    if (!timestamp) return 'Unknown time';
 
-  // Always treat timestamp as UTC
-  const eventTime = Date.parse(timestamp + 'Z'); // gives milliseconds
-  const now = Date.now(); // also in milliseconds
+    // Parse the timestamp. Since we've switched to TIMESTAMPTZ, 
+    // the string will already contain timezone info (e.g., +00).
+    const eventTime = Date.parse(timestamp);
 
-  const diffInSeconds = Math.floor((now - eventTime) / 1000);
+    if (isNaN(eventTime)) {
+      console.error(`Invalid timestamp received: ${timestamp}`);
+      return 'Invalid time';
+    }
 
-  if (diffInSeconds < 0) return 'Just now';
-  if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-  return `${Math.floor(diffInSeconds / 86400)}d ago`;
-};
+    const now = Date.now();
+    const diffInSeconds = Math.floor((now - eventTime) / 1000);
+
+    if (diffInSeconds < 0) return 'Just now';
+    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
 
 
   const formatTimestamp = (timestamp) => {
@@ -136,18 +141,18 @@ const formatRelativeTime = (timestamp) => {
   return (
     <div className={`event-log-sidebar ${isCollapsed ? 'collapsed' : 'expanded'}`}>
       {/* Collapse/Expand Toggle */}
-      <button 
+      <button
         className="sidebar-toggle"
         onClick={onToggleCollapse}
         title={isCollapsed ? 'Show Event Log' : 'Hide Event Log'}
       >
-        <Icon 
-        path={mdiChevronLeft}
-          size={1} 
-          style={{ 
+        <Icon
+          path={mdiChevronLeft}
+          size={1}
+          style={{
             transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
             transition: 'transform 0.3s ease'
-          }} 
+          }}
         />
       </button>
 
@@ -159,7 +164,7 @@ const formatRelativeTime = (timestamp) => {
               <h3>Recent Events</h3>
               <span className="event-count">({(events || []).length})</span>
             </div>
-            
+
             <div className="header-controls">
               <button
                 className={`auto-refresh-toggle ${autoRefresh ? 'active' : ''}`}
@@ -169,16 +174,16 @@ const formatRelativeTime = (timestamp) => {
                 <Icon path={mdiClockOutline} size={0.8} />
                 {autoRefresh ? '30s' : 'Off'}
               </button>
-              
+
               <button
                 className="refresh-btn"
                 onClick={fetchEvents}
                 disabled={loading}
                 title="Refresh events"
               >
-                <Icon 
-                  path={mdiRefresh} 
-                  size={0.8} 
+                <Icon
+                  path={mdiRefresh}
+                  size={0.8}
                   className={loading ? 'spinning' : ''}
                 />
               </button>
@@ -213,13 +218,13 @@ const formatRelativeTime = (timestamp) => {
                       <div className="event-icon">
                         <Icon path={icon.path} size={0.9} color={icon.color} />
                       </div>
-                      
+
                       <div className="event-content">
                         <div className="event-main">
                           <span className="event-service">{event.serviceName}</span>
                           <span className="event-message">{event.message}</span>
                         </div>
-                        
+
                         <div className="event-meta">
                           <span className="event-time" title={formatTimestamp(event.timestamp)}>
                             {formatRelativeTime(event.timestamp)}
@@ -230,7 +235,7 @@ const formatRelativeTime = (timestamp) => {
                             </span>
                           )}
                         </div>
-                        
+
                         {event.fullMessage && event.fullMessage !== event.message && (
                           <div className="event-details">
                             {event.fullMessage.split('\n').slice(1, 3).join('\n')}

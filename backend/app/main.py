@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.routes import endpoints
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
@@ -9,9 +10,16 @@ from app.db import close_connection_pool
 
 app = FastAPI(
     title="Monitoring API",
-    docs_url="/service/docs",
-    redoc_url="/service/redoc",
-    openapi_url="/service/openapi.json"
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    root_path="/widget10-api"  # Serve docs/openapi under the proxied root
+)
+
+# Trust proxy headers
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["*"]
 )
 
 # Add CORS middleware
@@ -23,6 +31,7 @@ app.add_middleware(
         "http://frontend:3111", 
         "http://localhost:8011",
         "http://localhost:3001",
+        "http://localhost:8085",  # Main nginx gateway
         "http://172.25.160.1:8011/",
         "https://opmthredds.gem.spc.int/"  
     ],

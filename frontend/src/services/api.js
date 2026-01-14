@@ -1,5 +1,6 @@
 // src/api.js
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://opmthredds.gem.spc.int/service';
+console.info('DEBUG: API_BASE_URL =', API_BASE_URL);
 const FALLBACK_API_KEY = process.env.REACT_APP_API_KEY || 'ssshh';
 
 const getApiKey = () => {
@@ -105,9 +106,10 @@ export const servicesApi = {
     }),
 
   // Sync Cloud Services
-  syncCloud: () =>
+  syncCloud: (data = null) =>
     apiRequest('/cloud/sync', {
       method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
     }),
 
   // Get grouping preferences

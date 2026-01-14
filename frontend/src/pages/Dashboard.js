@@ -10,6 +10,7 @@ import { mdiCloseCircleOutline, mdiChartBellCurveCumulative, mdiCheckCircleOutli
 import { useNavigate } from 'react-router-dom';
 import '../App.css';
 import Graph from '../components/Graph';
+import { useRef } from 'react';
 
 const SystemProgressBar = ({ value, label }) => {
   let colorClass = 'progress-low';
@@ -44,6 +45,7 @@ function Dashboard() {
   const [groupingPreferences, setGroupingPreferences] = useState({});
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [refreshInterval, setRefreshInterval] = useState(30);
+  const timersRef = useRef({});
 
   useEffect(() => {
     checkApiStatus();
@@ -61,8 +63,53 @@ function Dashboard() {
       fetchServices(true);
     }, refreshInterval * 1000);
 
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [refreshInterval]);
+
+  // Precise Monitoring Scheduler for Frontend-proxied services
+  useEffect(() => {
+    // Clear existing timers
+    if (timersRef.current) {
+      Object.values(timersRef.current).forEach(clearTimeout);
+      timersRef.current = {};
+    }
+
+    const now = new Date();
+    services.forEach(service => {
+      if (service.monitoring_proxy === 'frontend' && service.is_active !== false) {
+        // Ensure we parse the timestamp correctly as UTC
+        const lastChecked = new Date(service.updated_at || service.checked_at || 0);
+
+        // Safety check: if date is invalid, set a default delay to avoid NaN or immediate loops
+        if (isNaN(lastChecked.getTime())) {
+          console.warn(`Frontend Scheduler [${service.name}]: Invalid date detected, using fallback check.`);
+          timersRef.current[service.id] = setTimeout(() => handleMonitorSingle(null, service), 60000);
+          return;
+        }
+
+        const intervalSec = service.check_interval_sec || 300;
+        const intervalMs = intervalSec * 1000;
+
+        const timeSinceLast = now.getTime() - lastChecked.getTime();
+        const delay = Math.max(0, intervalMs - timeSinceLast);
+
+        console.debug(`Frontend Scheduler [${service.name}]: Last check: ${lastChecked.toISOString()}, Now: ${now.toISOString()}, Interval: ${intervalSec}s, Delaying next check by: ${Math.round(delay / 1000)}s`);
+
+        timersRef.current[service.id] = setTimeout(() => {
+          console.info(`Frontend Scheduler: Triggering check for ${service.name} after ${intervalSec}s`);
+          handleMonitorSingle(null, service);
+        }, delay);
+      }
+    });
+
+    return () => {
+      if (timersRef.current) {
+        Object.values(timersRef.current).forEach(clearTimeout);
+      }
+    };
+  }, [services]);
 
   const fetchRefreshInterval = async () => {
     try {
@@ -128,21 +175,80 @@ function Dashboard() {
     }
   };
 
-  const handleMonitorSingle = async (event, serviceId) => {
-    // Prevent the card click event from firing
-    event.stopPropagation();
+  const performFrontendCheck = async (service) => {
+    console.info(`Performing Frontend Check for Service: ${service.name}`);
+    const CLOUD_AUTH_URL = "https://cloud-monitoring.corp.spc.int/api/collections/users/auth-with-password";
+    const CLOUD_RECORDS_URL = "https://cloud-monitoring.corp.spc.int/api/collections/systems/records";
+    const IDENTITY = "divesha@spc.int";
+    const PASSWORD = "Un2345678";
+
+    // A. Authenticate
+    const authRes = await fetch(CLOUD_AUTH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identity: IDENTITY, password: PASSWORD })
+    });
+
+    if (!authRes.ok) throw new Error(`Frontend Auth Failed (Status ${authRes.status})`);
+    const authData = await authRes.json();
+    const token = authData.token;
+
+    // B. Fetch This Specific Item (with robust URL encoding)
+    const filterParam = `name='${service.name}'`;
+    const encodedFilter = encodeURIComponent(filterParam).replace(/'/g, "%27");
+
+    const itemsRes = await fetch(`${CLOUD_RECORDS_URL}?filter=${encodedFilter}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (!itemsRes.ok) throw new Error(`Frontend Fetch Failed (Status ${itemsRes.status})`);
+    const data = await itemsRes.json();
+
+    // C. Send to Backend to sync
+    console.info(`Frontend fetched data for ${service.name}. Syncing to backend...`);
+    await servicesApi.syncCloud(data);
+
+    const item = data.items && data.items.length > 0 ? data.items[0] : null;
+    return {
+      status: item ? item.status : 'unknown',
+      output: `Checked via Frontend Proxy. Cloud status: ${item ? item.status : 'not found in cloud'}`
+    };
+  };
+
+  const handleMonitorSingle = async (event, service) => {
+    if (event) event.stopPropagation();
+
+    const targetService = typeof service === 'object' ? service : services.find(s => String(s.id) === String(service));
+
+    if (!targetService) {
+      console.warn("Monitor requested for unknown service:", service);
+      return;
+    }
+
+    const useFrontendProxy = targetService.monitoring_proxy === 'frontend';
 
     try {
-      const result = await monitoringApi.monitorSingle(serviceId);
-      console.log('Monitoring:', result);
-      alert(`Monitor result: ${result.status}`);
+      let result;
+      if (useFrontendProxy) {
+        try {
+          result = await performFrontendCheck(targetService);
+        } catch (feError) {
+          console.error("Frontend Monitoring failed:", feError);
+          throw new Error(`Proxy check failed: ${feError.message}. Ensure VPN/Corporate Access.`);
+        }
+      } else {
+        // Standard backend check
+        result = await monitoringApi.monitorSingle(targetService.id);
+      }
 
-      await fetchServices();
-      // Trigger event log refresh after single monitoring
+      console.log('Monitoring Result:', result);
+      if (event) alert(`Monitor result for ${targetService.name}: ${result.status}`);
+
+      await fetchServices(true); // Silent refresh
       setEventRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error('Monitoring error:', err);
-      alert(`Monitoring failed: ${err.output || err.message || 'Unknown error'}`);
+      if (event) alert(`Monitoring failed for ${targetService?.name || 'service'}: ${err.message}`);
     }
   };
 
@@ -230,7 +336,7 @@ function Dashboard() {
         <div className="service-actions">
           {service.protocol !== 'external' && (
             <button
-              onClick={(event) => handleMonitorSingle(event, service.id)}
+              onClick={(event) => handleMonitorSingle(event, service)}
               className="btn btn-small"
             >
               Test Now
